@@ -61,6 +61,12 @@ All operations are coordinated by a **central AI Orchestrator model**.
 ---
 
 ## 🔄 Workflow
+flowchart TD
+    A[Business Data Collection] --> B[AI Evaluation & Scoring]
+    B --> C[Pain Point Detection]
+    C --> D[Demo Generation]
+    D --> E[Passive Outreach]
+    E --> F[Subscription / Commission Revenue]
 
 ---
 
