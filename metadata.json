@@ -1,0 +1,7 @@
+{
+  "name": "BizGrow AI - Lead Generation Engine",
+  "description": "A powerful platform to discover local businesses via Google Maps, analyze their digital footprint, and generate personalized IT service proposals to help them grow.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
