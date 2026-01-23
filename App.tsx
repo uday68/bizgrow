@@ -20,7 +20,7 @@ import {
 import LeadSearch from './components/LeadSearch';
 import Dashboard from './components/Dashboard';
 import ProposalView from './components/ProposalView';
-import DeveloperDashboard from './components/DeveloperDashboard';
+import DeveloperDashboard from './components/DeveloperDashboardSimple';
 import { BusinessLead } from './types';
 
 const Sidebar = () => (
