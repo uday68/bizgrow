@@ -20,6 +20,7 @@ import {
 import LeadSearch from './components/LeadSearch';
 import Dashboard from './components/Dashboard';
 import ProposalView from './components/ProposalView';
+import DeveloperDashboard from './components/DeveloperDashboard';
 import { BusinessLead } from './types';
 
 const Sidebar = () => (
@@ -35,6 +36,10 @@ const Sidebar = () => (
       <Link to="/" className="flex items-center gap-3 p-3 hover:bg-slate-800 rounded-lg transition-colors group">
         <LayoutDashboard size={20} className="text-slate-400 group-hover:text-white" />
         <span className="font-medium">Dashboard</span>
+      </Link>
+      <Link to="/developer" className="flex items-center gap-3 p-3 hover:bg-slate-800 rounded-lg transition-colors group">
+        <TrendingUp size={20} className="text-slate-400 group-hover:text-white" />
+        <span className="font-medium">AI Engine</span>
       </Link>
       <Link to="/search" className="flex items-center gap-3 p-3 hover:bg-slate-800 rounded-lg transition-colors group">
         <Search size={20} className="text-slate-400 group-hover:text-white" />
@@ -79,6 +84,7 @@ const App: React.FC = () => {
         <main className="flex-1 ml-64 p-8">
           <Routes>
             <Route path="/" element={<Dashboard leads={savedLeads} onUpdateStatus={handleUpdateLeadStatus} />} />
+            <Route path="/developer" element={<DeveloperDashboard />} />
             <Route path="/search" element={<LeadSearch onSaveLead={handleSaveLead} savedLeadIds={savedLeads.map(l => l.id)} />} />
             <Route path="/proposal/:id" element={<ProposalView leads={savedLeads} />} />
           </Routes>
