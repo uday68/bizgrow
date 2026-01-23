@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "name": "bizgrow-ai",
+  "name": "bizgrow-ai-frontend",
   "builds": [
     {
       "src": "package.json",
@@ -12,27 +12,14 @@
   ],
   "routes": [
     {
-      "src": "/api/(.*)",
-      "dest": "/api/serverless/$1"
-    },
-    {
       "src": "/(.*)",
       "dest": "/index.html"
     }
   ],
-  "functions": {
-    "api/serverless/**.js": {
-      "runtime": "nodejs18.x",
-      "maxDuration": 30
-    }
-  },
-  "env": {
-    "GEMINI_API_KEY": "@gemini-api-key",
-    "NODE_ENV": "production"
-  },
   "build": {
     "env": {
-      "VITE_API_URL": "https://bizgrow-ai.vercel.app"
+      "VITE_API_URL": "https://biggrow-production.up.railway.app/api",
+      "VITE_WS_URL": "wss://biggrow-production.up.railway.app"
     }
   }
 }

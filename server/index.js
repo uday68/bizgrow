@@ -23,10 +23,14 @@ const wss = new WebSocketServer({ server });
 app.use(cors({
   origin: process.env.NODE_ENV === 'production' 
     ? [
-        'https://bizgrow-ai.railway.app',
-        'https://bizgrow-ai-frontend.onrender.com',
+        'https://biggrow-production.up.railway.app',
+        'https://bizgrow-ai-frontend.vercel.app',
         'https://bizgrow-ai.vercel.app',
-        'https://bizgrow-ai.netlify.app'
+        'https://bizgrow-ai-frontend.netlify.app',
+        'https://bizgrow-ai.netlify.app',
+        /\.vercel\.app$/,
+        /\.netlify\.app$/,
+        /\.github\.io$/
       ]
     : ['http://localhost:3000'],
   credentials: true

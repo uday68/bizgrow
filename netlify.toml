@@ -5,22 +5,13 @@
 [build.environment]
   NODE_VERSION = "18"
   NPM_VERSION = "9"
+  VITE_API_URL = "https://biggrow-production.up.railway.app/api"
+  VITE_WS_URL = "wss://biggrow-production.up.railway.app"
 
 [context.production.environment]
   NODE_ENV = "production"
-  VITE_API_URL = "https://bizgrow-ai.netlify.app/.netlify/functions"
-
-[[redirects]]
-  from = "/api/*"
-  to = "/.netlify/functions/:splat"
-  status = 200
-
-[[headers]]
-  for = "/api/*"
-  [headers.values]
-    Access-Control-Allow-Origin = "*"
-    Access-Control-Allow-Methods = "GET, POST, PUT, DELETE, OPTIONS"
-    Access-Control-Allow-Headers = "Content-Type, Authorization"
+  VITE_API_URL = "https://biggrow-production.up.railway.app/api"
+  VITE_WS_URL = "wss://biggrow-production.up.railway.app"
 
 [[headers]]
   for = "/*"
