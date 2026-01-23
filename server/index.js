@@ -20,8 +20,19 @@ const server = createServer(app);
 const wss = new WebSocketServer({ server });
 
 // Middleware
-app.use(cors());
-app.use(express.json());
+app.use(cors({
+  origin: process.env.NODE_ENV === 'production' 
+    ? [
+        'https://bizgrow-ai.railway.app',
+        'https://bizgrow-ai-frontend.onrender.com',
+        'https://bizgrow-ai.vercel.app',
+        'https://bizgrow-ai.netlify.app'
+      ]
+    : ['http://localhost:3000'],
+  credentials: true
+}));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Initialize AI Agents
 const discoveryAgent = new BusinessDiscoveryAgent();
@@ -50,7 +61,48 @@ const broadcast = (data) => {
   });
 };
 
+// Health check
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    uptime: Math.floor(process.uptime()),
+    memory: process.memoryUsage(),
+    version: '1.0.0',
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
+
+// Basic info endpoint
+app.get('/', (req, res) => {
+  res.json({
+    name: 'BizGrow AI Server',
+    version: '1.0.0',
+    description: 'AI-powered business automation platform',
+    endpoints: {
+      health: '/health',
+      api: '/api',
+      developer: '/api/developer/metrics'
+    },
+    documentation: 'https://github.com/your-repo/bizgrow-ai'
+  });
+});
+
 // Routes
+
+// Health check
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    agents: {
+      discovery: discoveryAgent.getStatus(),
+      proposal: proposalAgent.getStatus(),
+      builder: builderAgent.getStatus()
+    },
+    database: 'connected'
+  });
+});
 
 // Developer Dashboard Metrics
 app.get('/api/developer/metrics', async (req, res) => {
@@ -281,16 +333,18 @@ cron.schedule('0 */2 * * *', async () => {
 
 // Initialize database and start server
 const PORT = process.env.PORT || 3001;
+const HOST = process.env.HOST || '0.0.0.0';
 
 async function startServer() {
   try {
     await initDatabase();
     console.log('Database initialized successfully');
     
-    server.listen(PORT, () => {
-      console.log(`🚀 BizGrow AI Server running on port ${PORT}`);
-      console.log(`📊 Developer Dashboard: http://localhost:${PORT}`);
+    server.listen(PORT, HOST, () => {
+      console.log(`🚀 BizGrow AI Server running on ${HOST}:${PORT}`);
+      console.log(`📊 Health Check: http://${HOST}:${PORT}/health`);
       console.log(`🤖 AI Agents: Active and monitoring`);
+      console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
     });
   } catch (error) {
     console.error('Failed to start server:', error);

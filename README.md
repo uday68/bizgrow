@@ -55,86 +55,132 @@ The platform automatically:
 
 ### Prerequisites
 - Node.js 18+ 
-- Google Gemini API key
-- Modern web browser with geolocation support
+- Google Gemini API key ([Get one here](https://makersuite.google.com/app/apikey))
 
-### Installation Steps
+### Quick Start (Recommended)
 
-1. **Clone the repository**
+1. **Clone and setup**
    ```bash
    git clone <repository-url>
    cd bizgrow-ai-lead-generation-engine
-   ```
-
-2. **Install dependencies**
-   ```bash
    npm install
    ```
 
-3. **Configure environment variables**
-   Create a `.env` file in the root directory:
-   ```env
-   GEMINI_API_KEY=your_gemini_api_key_here
-   ```
-
-4. **Start development server**
+2. **Configure environment**
    ```bash
-   npm run dev
+   cp .env.example .env
+   ```
+   
+   Edit `.env` and add your Gemini API key:
+   ```env
+   GEMINI_API_KEY=your_actual_api_key_here
    ```
 
-5. **Open in browser**
-   Navigate to `http://localhost:3000`
+3. **Start the application**
+   ```bash
+   npm start
+   ```
+   
+   This will automatically:
+   - Install server dependencies
+   - Initialize the database
+   - Start both frontend and backend
+   - Display access URLs and status
 
-### Build for Production
+### Manual Setup (Alternative)
+
+If you prefer manual control:
+
 ```bash
-npm run build
-npm run preview
+# Install dependencies
+npm install
+npm run server:install
+
+# Initialize database
+npm run server:init
+
+# Start services separately
+npm run dev          # Frontend (Terminal 1)
+npm run server       # Backend (Terminal 2)
 ```
 
----
-
-## 📱 How to Use
-
-### 1. Lead Discovery
-- Navigate to "Lead Finder" in the sidebar
-- Enter search queries like "Bakery in Manhattan" or "Auto repair in Austin"
-- Allow geolocation for more accurate local results
-- Review discovered businesses and their digital presence status
-
-### 2. Lead Management
-- Save promising leads to your dashboard
-- Update lead status (New → Contacted → Interested → Converted)
-- Track businesses missing websites (high-opportunity targets)
-- Monitor conversion pipeline and metrics
-
-### 3. Proposal Generation
-- Click "Pitch" button for any saved lead
-- AI automatically generates personalized IT service proposals
-- Review market analysis, gap assessment, and recommended services
-- Print or save proposals as PDF for client presentations
+### Access Points
+- **Frontend Dashboard**: http://localhost:3000
+- **Developer Control Center**: http://localhost:3000/#/developer
+- **Backend API**: http://localhost:3001
+- **WebSocket**: ws://localhost:3001
 
 ---
 
-## 🧠 AI-Powered Features
+## 📊 Developer Control Center
 
-### Business Discovery
-- Uses Gemini AI with Google Maps integration
-- Identifies businesses matching search criteria
-- Extracts contact information, ratings, and online presence
-- Provides grounding links for verification
+### Real-Time Monitoring Dashboard
+The Developer Dashboard provides complete oversight of the AI automation system:
 
-### Proposal Generation
-- Analyzes business context and digital gaps
-- Creates customized service recommendations
-- Generates professional market analysis
-- Suggests pricing strategies and implementation roadmaps
+#### Key Metrics
+- **Businesses Discovered**: Total count with growth trends
+- **Proposals Sent**: Automated outreach statistics  
+- **Interest Responses**: Conversion tracking
+- **Projects Built**: Completed website deployments
 
-### Service Recommendations
-- Website creation for businesses without online presence
-- SEO optimization for existing websites
-- Digital marketing and online visibility solutions
-- E-commerce and online ordering systems
-- Inventory management and delivery assistance
+#### AI Agent Management
+- **Live Status Monitoring**: See what each agent is currently doing
+- **Performance Metrics**: Track completion rates and efficiency
+- **Manual Controls**: Start/stop agents or trigger specific tasks
+- **Queue Management**: Monitor pending work and processing status
+
+#### Regional Analytics
+- **Geographic Performance**: Revenue and conversion by region
+- **Market Opportunities**: Identify high-potential areas
+- **Competitive Analysis**: Track market saturation and gaps
+
+#### Live Activity Feed
+- **Real-Time Updates**: See AI operations as they happen
+- **WebSocket Integration**: Instant notifications and status changes
+- **Historical Tracking**: Review past activities and outcomes
+
+---
+
+## 🤖 AI Agent Architecture
+
+### Automated Business Pipeline
+The system runs **4 specialized AI agents** that work together to automate the entire business development process:
+
+#### 1. Business Discovery Agent
+- **Purpose**: Finds local businesses with growth potential
+- **Frequency**: Runs every hour + on-demand
+- **Capabilities**:
+  - Google Maps integration for real business data
+  - Digital presence analysis (website detection)
+  - Opportunity scoring (0-100 scale)
+  - Industry categorization and targeting
+
+#### 2. Proposal Generation Agent  
+- **Purpose**: Creates personalized IT service proposals
+- **Frequency**: Runs every 30 minutes + triggered by discoveries
+- **Capabilities**:
+  - AI-powered market analysis and gap assessment
+  - Customized service recommendations
+  - Professional proposal formatting
+  - Email delivery (when configured)
+
+#### 3. Project Builder Agent
+- **Purpose**: Automatically builds websites for interested businesses
+- **Frequency**: Runs every 2 hours + triggered by interest
+- **Capabilities**:
+  - Complete website generation (HTML, CSS, JS)
+  - Responsive, SEO-optimized code
+  - Industry-specific design and content
+  - Simulated deployment process
+
+#### 4. Market Analytics Agent
+- **Purpose**: Analyzes performance and identifies trends
+- **Frequency**: Continuous monitoring
+- **Capabilities**:
+  - Regional performance tracking
+  - Conversion rate analysis
+  - Revenue projections
+  - Market opportunity identification
 
 ---
 
