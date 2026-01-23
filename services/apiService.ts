@@ -18,18 +18,18 @@ const getApiBaseUrl = () => {
       return `https://${currentHost.replace('-frontend', '-server')}/api`;
     }
     
-    // Vercel deployment
+    // Vercel deployment - connect to Railway backend
     if (currentHost.includes('vercel.app')) {
-      return `https://${currentHost}/api`;
+      return 'https://biggrow-production.up.railway.app/api';
     }
     
-    // Netlify deployment
+    // Netlify deployment - connect to Railway backend
     if (currentHost.includes('netlify.app')) {
-      return `https://${currentHost}/.netlify/functions`;
+      return 'https://biggrow-production.up.railway.app/api';
     }
     
-    // Default production API
-    return `https://${currentHost}/api`;
+    // Default production API - Railway backend
+    return 'https://biggrow-production.up.railway.app/api';
   }
   
   // Development
