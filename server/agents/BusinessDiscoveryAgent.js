@@ -37,10 +37,9 @@ class BusinessDiscoveryAgent {
 
     try {
       const response = await this.geminiAI.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: "gemini-2.0-flash-exp",
         contents: `Find ${limit} businesses matching "${query}" in ${region}. Focus on businesses that might need digital services like websites, online ordering, or digital marketing. Include contact details and assess their current digital presence.`,
         config: {
-          tools: [{ googleMaps: {} }],
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.OBJECT,

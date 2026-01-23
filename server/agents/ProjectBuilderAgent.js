@@ -116,7 +116,7 @@ class ProjectBuilderAgent {
     `;
 
     const response = await this.geminiAI.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-2.0-flash-exp",
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -208,7 +208,7 @@ class ProjectBuilderAgent {
     `;
 
     const response = await this.geminiAI.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-2.0-flash-exp",
       contents: prompt
     });
 
@@ -235,7 +235,7 @@ class ProjectBuilderAgent {
     `;
 
     const response = await this.geminiAI.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-2.0-flash-exp",
       contents: prompt
     });
 
@@ -258,7 +258,7 @@ class ProjectBuilderAgent {
     `;
 
     const response = await this.geminiAI.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-2.0-flash-exp",
       contents: prompt
     });
 
