@@ -5,7 +5,14 @@ class BusinessDiscoveryAgent {
   constructor() {
     this.isActive = true;
     this.currentTask = null;
-    this.geminiAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    
+    // Validate API key
+    if (!process.env.GEMINI_API_KEY) {
+      console.error('GEMINI_API_KEY environment variable is not set');
+      throw new Error('GEMINI_API_KEY environment variable is required');
+    }
+    
+    this.geminiAI = new GoogleGenAI(process.env.GEMINI_API_KEY);
     this.discoveryQueue = [];
     this.isProcessing = false;
   }

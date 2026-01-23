@@ -6,7 +6,14 @@ class ProposalAgent {
   constructor() {
     this.isActive = true;
     this.currentTask = null;
-    this.geminiAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    
+    // Validate API key
+    if (!process.env.GEMINI_API_KEY) {
+      console.error('GEMINI_API_KEY environment variable is not set');
+      throw new Error('GEMINI_API_KEY environment variable is required');
+    }
+    
+    this.geminiAI = new GoogleGenAI(process.env.GEMINI_API_KEY);
     this.proposalQueue = [];
     this.isProcessing = false;
     this.emailTransporter = this.setupEmailTransporter();
@@ -18,7 +25,7 @@ class ProposalAgent {
       return null;
     }
 
-    return nodemailer.createTransporter({
+    return nodemailer.createTransport({
       host: process.env.EMAIL_HOST,
       port: process.env.EMAIL_PORT || 587,
       secure: false,

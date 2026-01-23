@@ -4,16 +4,18 @@ import dotenv from 'dotenv';
 import { WebSocketServer } from 'ws';
 import { createServer } from 'http';
 import cron from 'node-cron';
+import path from 'path';
 
-// Import AI Agents
+// Load environment variables from parent directory
+dotenv.config({ path: path.join(process.cwd(), '..', '.env') });
+
+// Import Database FIRST
+import { initDatabase, getDatabase } from './database/init.js';
+
+// Import AI Agents AFTER environment variables are loaded
 import BusinessDiscoveryAgent from './agents/BusinessDiscoveryAgent.js';
 import ProposalAgent from './agents/ProposalAgent.js';
 import ProjectBuilderAgent from './agents/ProjectBuilderAgent.js';
-
-// Import Database
-import { initDatabase, getDatabase } from './database/init.js';
-
-dotenv.config();
 
 const app = express();
 const server = createServer(app);
