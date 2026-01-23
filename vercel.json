@@ -1,6 +1,5 @@
 {
   "version": 2,
-  "name": "bizgrow-ai-frontend",
   "builds": [
     {
       "src": "package.json",
@@ -10,10 +9,21 @@
       }
     }
   ],
-  "routes": [
+  "rewrites": [
     {
-      "src": "/(.*)",
-      "dest": "/index.html"
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/assets/(.*)",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/javascript"
+        }
+      ]
     }
   ],
   "build": {

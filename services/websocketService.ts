@@ -26,8 +26,13 @@ class WebSocketService {
         return `${protocol}//${currentHost.replace('-frontend', '-server')}`;
       }
       
-      // Default production WebSocket
-      return `${protocol}//${currentHost}`;
+      // Vercel/Netlify - connect to Railway backend
+      if (currentHost.includes('vercel.app') || currentHost.includes('netlify.app')) {
+        return 'wss://biggrow-production.up.railway.app';
+      }
+      
+      // Default production WebSocket - Railway backend
+      return 'wss://biggrow-production.up.railway.app';
     }
     
     // Development
