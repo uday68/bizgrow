@@ -42,6 +42,6 @@ EXPOSE 3001
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD node -e "require('http').get('http://localhost:3001/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"
 
-# Start server
+# Set working directory to server and start
 WORKDIR /app/server
-CMD ["npm", "start"]
+CMD ["node", "index.js"]
