@@ -7,20 +7,51 @@
   "scripts": {
     "start": "node index.js",
     "dev": "node --watch index.js",
-    "init-db": "node database/init.js"
+    "init-db": "node database/init.js",
+    "db:init": "node scripts/db-manager.js init",
+    "db:migrate": "node scripts/db-manager.js migrate up",
+    "db:migrate:status": "node scripts/db-manager.js migrate status",
+    "db:migrate:rollback": "node scripts/db-manager.js migrate rollback",
+    "db:migrate:create": "node scripts/db-manager.js migrate create",
+    "db:health": "node scripts/db-manager.js health",
+    "db:monitor": "node scripts/db-manager.js monitor",
+    "db:optimize": "node scripts/db-manager.js optimize",
+    "db:stats": "node scripts/db-manager.js stats",
+    "db:test": "node scripts/db-manager.js test-connection",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
+    "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch",
+    "test:property": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testPathPattern=property",
+    "test:auth": "node test-auth.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "cors": "^2.8.5",
-    "dotenv": "^16.3.1",
-    "sqlite3": "^5.1.6",
-    "node-cron": "^3.0.3",
     "@google/genai": "^1.34.0",
     "axios": "^1.6.2",
+    "bcrypt": "^5.1.1",
+    "commander": "^11.1.0",
+    "compression": "^1.8.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "express-rate-limit": "^7.1.5",
+    "express-validator": "^7.0.1",
+    "helmet": "^7.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "node-cron": "^3.0.3",
     "nodemailer": "^6.9.7",
+    "pg": "^8.11.3",
+    "pg-pool": "^3.6.1",
+    "rate-limit-redis": "^4.2.0",
+    "redis": "^4.6.10",
+    "socket.io": "^4.8.3",
+    "sqlite3": "^5.1.6",
+    "winston": "^3.11.0",
     "ws": "^8.14.2"
   },
   "devDependencies": {
-    "nodemon": "^3.0.2"
+    "@types/jest": "^29.5.8",
+    "fast-check": "^3.15.0",
+    "jest": "^29.7.0",
+    "nodemon": "^3.0.2",
+    "supertest": "^6.3.3"
   }
 }

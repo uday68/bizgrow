@@ -19,7 +19,10 @@ import {
   AlertCircle,
   Settings,
   Bell,
-  Search
+  Search,
+  LogOut,
+  User,
+  Shield
 } from 'lucide-react';
 import { apiService } from '../services/apiService';
 import { websocketService } from '../services/websocketService';
@@ -139,6 +142,18 @@ const ModernDashboard: React.FC = () => {
     }
   };
 
+  const handleLogout = async () => {
+    try {
+      await apiService.logout();
+      // Redirect will be handled by the ProtectedRoute component
+      window.location.reload();
+    } catch (error) {
+      console.error('Logout failed:', error);
+      // Force logout even if API call fails
+      window.location.reload();
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center">
@@ -217,16 +232,46 @@ const ModernDashboard: React.FC = () => {
               />
             </div>
 
-            {/* Notifications */}
-            <button className="glass-button p-2 rounded-xl relative">
-              <Bell className="h-5 w-5 text-white" />
-              <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full"></span>
-            </button>
+            {/* User Profile */}
+            <div className="flex items-center space-x-3">
+              {/* User Info */}
+              <div className="flex items-center space-x-2 glass-button px-3 py-2 rounded-xl">
+                <div className="w-8 h-8 bg-gradient-to-r from-green-400 to-blue-500 rounded-lg flex items-center justify-center">
+                  <User className="h-4 w-4 text-white" />
+                </div>
+                <div className="text-left">
+                  <p className="text-white text-sm font-medium">
+                    {apiService.getUser()?.firstName || 'User'} {apiService.getUser()?.lastName || ''}
+                  </p>
+                  <div className="flex items-center space-x-1">
+                    <Shield className="h-3 w-3 text-white/60" />
+                    <p className="text-white/60 text-xs capitalize">
+                      {apiService.getUser()?.role || 'user'}
+                    </p>
+                  </div>
+                </div>
+              </div>
 
-            {/* Settings */}
-            <button className="glass-button p-2 rounded-xl">
-              <Settings className="h-5 w-5 text-white" />
-            </button>
+              {/* Notifications */}
+              <button className="glass-button p-2 rounded-xl relative">
+                <Bell className="h-5 w-5 text-white" />
+                <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full"></span>
+              </button>
+
+              {/* Settings */}
+              <button className="glass-button p-2 rounded-xl">
+                <Settings className="h-5 w-5 text-white" />
+              </button>
+
+              {/* Logout */}
+              <button 
+                onClick={handleLogout}
+                className="glass-button p-2 rounded-xl hover:bg-red-500/20 transition-colors duration-200"
+                title="Sign Out"
+              >
+                <LogOut className="h-5 w-5 text-white" />
+              </button>
+            </div>
           </div>
         </div>
       </nav>

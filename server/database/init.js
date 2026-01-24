@@ -1,37 +1,203 @@
 import sqlite3 from 'sqlite3';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import dotenv from 'dotenv';
+import path from 'path';
+import postgresDb from './postgres.js';
+import migrator from './migrator.js';
+
+// Load environment variables
+dotenv.config({ path: path.join(process.cwd(), '..', '.env') });
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 let db;
+let dbType = 'sqlite'; // Default to SQLite for development
 
-export const initDatabase = () => {
-  return new Promise((resolve, reject) => {
-    db = new sqlite3.Database(join(__dirname, 'bizgrow.db'), (err) => {
-      if (err) {
-        console.error('Error opening database:', err);
-        reject(err);
-        return;
-      }
+/**
+ * Initialize database based on environment configuration
+ */
+export const initDatabase = async () => {
+  try {
+    // Determine database type from environment
+    const usePostgres = process.env.NODE_ENV === 'production' || 
+                       process.env.DB_TYPE === 'postgres' ||
+                       process.env.DATABASE_URL; // Common for cloud deployments
+
+    if (usePostgres) {
+      console.log('🐘 Initializing PostgreSQL database...');
+      dbType = 'postgres';
       
-      console.log('Connected to SQLite database');
-      createTables().then(resolve).catch(reject);
-    });
-  });
+      // Initialize PostgreSQL connection
+      await postgresDb.init();
+      
+      // Run migrations
+      console.log('🔄 Running database migrations...');
+      await migrator.migrate();
+      
+      // Seed initial data if needed
+      await seedInitialDataPostgres();
+      
+      console.log('✅ PostgreSQL database initialized successfully');
+      return true;
+    } else {
+      console.log('📁 Initializing SQLite database...');
+      dbType = 'sqlite';
+      
+      return new Promise((resolve, reject) => {
+        db = new sqlite3.Database(join(__dirname, 'bizgrow.db'), (err) => {
+          if (err) {
+            console.error('Error opening SQLite database:', err);
+            reject(err);
+            return;
+          }
+          
+          console.log('Connected to SQLite database');
+          createTables().then(resolve).catch(reject);
+        });
+      });
+    }
+  } catch (error) {
+    console.error('❌ Database initialization failed:', error);
+    throw error;
+  }
 };
 
+/**
+ * Get database instance based on current type
+ */
 export const getDatabase = () => {
-  if (!db) {
-    throw new Error('Database not initialized. Call initDatabase() first.');
+  if (dbType === 'postgres') {
+    return postgresDb;
+  } else {
+    if (!db) {
+      throw new Error('SQLite database not initialized. Call initDatabase() first.');
+    }
+    return db;
   }
-  return db;
+};
+
+/**
+ * Get database type
+ */
+export const getDatabaseType = () => dbType;
+
+/**
+ * Execute query with database abstraction
+ */
+export const query = async (sql, params = []) => {
+  if (dbType === 'postgres') {
+    const result = await postgresDb.query(sql, params);
+    return result.rows;
+  } else {
+    return new Promise((resolve, reject) => {
+      if (sql.trim().toUpperCase().startsWith('SELECT')) {
+        db.all(sql, params, (err, rows) => {
+          if (err) reject(err);
+          else resolve(rows);
+        });
+      } else {
+        db.run(sql, params, function(err) {
+          if (err) reject(err);
+          else resolve({ lastID: this.lastID, changes: this.changes });
+        });
+      }
+    });
+  }
+};
+
+/**
+ * Seed initial data for PostgreSQL
+ */
+const seedInitialDataPostgres = async () => {
+  try {
+    // Check if agents already exist
+    const existingAgents = await postgresDb.query(
+      'SELECT COUNT(*) as count FROM agent_status'
+    );
+    
+    if (existingAgents.rows[0].count > 0) {
+      console.log('✅ Initial data already exists, skipping seed');
+      return;
+    }
+    
+    console.log('🌱 Seeding initial data...');
+    
+    // Insert initial agent status
+    const agents = [
+      {
+        agent_id: 'discovery',
+        name: 'Business Discovery Agent',
+        status: 'active',
+        tasks_completed: 247,
+        performance_score: 94
+      },
+      {
+        agent_id: 'proposal',
+        name: 'Proposal Generation Agent',
+        status: 'active',
+        tasks_completed: 89,
+        performance_score: 87
+      },
+      {
+        agent_id: 'builder',
+        name: 'Project Builder Agent',
+        status: 'idle',
+        tasks_completed: 23,
+        performance_score: 96
+      },
+      {
+        agent_id: 'analytics',
+        name: 'Market Analytics Agent',
+        status: 'active',
+        tasks_completed: 156,
+        performance_score: 91
+      }
+    ];
+
+    for (const agent of agents) {
+      await postgresDb.query(
+        `INSERT INTO agent_status 
+         (agent_id, name, status, tasks_completed, performance_score) 
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (agent_id) DO UPDATE SET
+         name = EXCLUDED.name,
+         status = EXCLUDED.status,
+         tasks_completed = EXCLUDED.tasks_completed,
+         performance_score = EXCLUDED.performance_score`,
+        [agent.agent_id, agent.name, agent.status, agent.tasks_completed, agent.performance_score]
+      );
+    }
+    
+    console.log('✅ Initial data seeded successfully');
+  } catch (error) {
+    console.error('❌ Failed to seed initial data:', error);
+    throw error;
+  }
 };
 
 const createTables = () => {
   return new Promise((resolve, reject) => {
     const tables = [
+      // Users table for authentication
+      `CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        email TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        first_name TEXT NOT NULL,
+        last_name TEXT NOT NULL,
+        role TEXT DEFAULT 'user' CHECK (role IN ('user', 'developer', 'admin')),
+        mfa_enabled BOOLEAN DEFAULT FALSE,
+        mfa_secret TEXT,
+        login_attempts INTEGER DEFAULT 0,
+        locked_until DATETIME,
+        password_changed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        last_login_at DATETIME
+      )`,
+      
       // Businesses table
       `CREATE TABLE IF NOT EXISTS businesses (
         id TEXT PRIMARY KEY,

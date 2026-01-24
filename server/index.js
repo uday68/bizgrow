@@ -10,7 +10,87 @@ import path from 'path';
 dotenv.config({ path: path.join(process.cwd(), '..', '.env') });
 
 // Import Database FIRST
-import { initDatabase, getDatabase } from './database/init.js';
+import { initDatabase, getDatabase, getDatabaseType } from './database/init.js';
+import databaseMonitor from './services/databaseMonitor.js';
+
+// Import Logging Services
+import logger from './services/logger.js';
+import logAggregationService from './services/logAggregation.js';
+import { 
+  requestResponseLogger, 
+  errorLogger, 
+  securityLogger,
+  agentLogger,
+  cacheLogger
+} from './middleware/logging.js';
+
+// Import Security Middleware
+import { 
+  corsMiddleware, 
+  securityMiddleware,
+  httpsEnforcement,
+  inputSanitization,
+  sqlInjectionProtection,
+  requestSizeLimiter,
+  securityEventLogger,
+  requestLogger, 
+  errorHandler,
+  apiLimiter,
+  agentLimiter,
+  searchLimiter,
+  uploadLimiter,
+  authenticateToken,
+  requireRole,
+  requirePermission
+} from './middleware/auth.js';
+
+// Import Routes
+import authRoutes from './routes/auth.js';
+import rateLimitRoutes from './routes/rateLimit.js';
+import cacheRoutes from './routes/cache.js';
+import performanceRoutes from './routes/performance.js';
+import loggingRoutes from './routes/logging.js';
+import chatRoutes from './routes/chat.js';
+import apmRoutes from './routes/apm.js';
+import errorRoutes from './routes/errors.js';
+
+// Import Cache Services
+import cacheService from './services/cacheService.js';
+import cachedDb from './services/cachedDatabase.js';
+import { 
+  businessCache, 
+  analyticsCache, 
+  agentCache, 
+  cacheMetrics,
+  warmCache 
+} from './middleware/cache.js';
+
+// Import Chat Services
+import chatService from './services/chatService.js';
+import websocketServer from './services/websocketServer.js';
+import { 
+  chatLogger, 
+  chatPerformanceLogger, 
+  chatSecurityLogger 
+} from './middleware/chatLogging.js';
+
+// Import Response Optimization Middleware
+import { responseOptimization } from './middleware/responseOptimization.js';
+
+// Import APM Services
+import apmService from './services/apmService.js';
+import apmWebSocketIntegration from './services/apmWebSocketIntegration.js';
+import chatAPMIntegration from './services/chatAPMIntegration.js';
+import { apmMiddleware, apmHealthCheck } from './middleware/apmMiddleware.js';
+
+// Import Error Tracking Services
+import errorTracker from './services/errorTracker.js';
+import { 
+  errorTrackingMiddleware, 
+  requestCompletionMiddleware,
+  setupUnhandledRejectionTracking,
+  setupUncaughtExceptionTracking
+} from './middleware/errorTracking.js';
 
 // Import AI Agents AFTER environment variables are loaded
 import BusinessDiscoveryAgent from './agents/BusinessDiscoveryAgent.js';
@@ -19,26 +99,85 @@ import ProjectBuilderAgent from './agents/ProjectBuilderAgent.js';
 
 const app = express();
 const server = createServer(app);
+
+// Setup WebSocket server for real-time chat
+const io = websocketServer.setup(server);
+
+// Legacy WebSocket for backwards compatibility
 const wss = new WebSocketServer({ server });
 
-// Middleware
-app.use(cors({
-  origin: process.env.NODE_ENV === 'production' 
-    ? [
-        'https://biggrow-production.up.railway.app',
-        'https://bizgrow-ai-frontend.vercel.app',
-        'https://bizgrow-ai.vercel.app',
-        'https://bizgrow-ai-frontend.netlify.app',
-        'https://bizgrow-ai.netlify.app',
-        /\.vercel\.app$/,
-        /\.netlify\.app$/,
-        /\.github\.io$/
-      ]
-    : ['http://localhost:3000'],
-  credentials: true
+// Apply Security Middleware FIRST
+app.use(httpsEnforcement);
+app.use(securityMiddleware);
+app.use(corsMiddleware);
+app.use(requestSizeLimiter('10mb'));
+app.use(inputSanitization);
+app.use(sqlInjectionProtection);
+app.use(securityEventLogger);
+
+// Apply comprehensive logging middleware
+app.use(requestResponseLogger({
+  logLevel: 'info',
+  includeBody: process.env.NODE_ENV !== 'production',
+  includeHeaders: false,
+  excludePaths: ['/health', '/favicon.ico'],
+  slowRequestThreshold: 1000
 }));
+
+// Apply context-aware logging middleware
+app.use(securityLogger());
+app.use(agentLogger());
+app.use(cacheLogger());
+app.use(chatLogger());
+app.use(chatPerformanceLogger());
+app.use(chatSecurityLogger());
+
+// Legacy request logger (can be removed once new logging is verified)
+app.use(requestLogger);
+
+// Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Apply API rate limiting to all routes
+app.use('/api', apiLimiter);
+
+// Apply cache metrics middleware
+app.use(cacheMetrics);
+
+// Apply cache warming middleware
+app.use(warmCache());
+
+// Apply APM middleware for comprehensive monitoring
+app.use(apmMiddleware());
+
+// Apply APM health check integration
+app.use(apmHealthCheck());
+
+// Apply error tracking middleware
+app.use(requestCompletionMiddleware);
+
+// Apply response optimization middleware (compression, cache headers, response time monitoring)
+app.use(responseOptimization({
+  compression: {
+    threshold: 1024, // 1KB minimum for compression
+    level: 6 // Balanced compression level
+  },
+  cache: {
+    static: { maxAge: 31536000, immutable: true }, // 1 year for static assets
+    api: { maxAge: 300, mustRevalidate: true }, // 5 minutes for API responses
+    dynamic: { maxAge: 0, noCache: true } // No caching for dynamic content
+  },
+  monitoring: {
+    slowThreshold: 1000, // 1 second threshold for slow requests
+    trackPercentiles: true
+  },
+  apiCaching: {
+    defaultTTL: 300, // 5 minutes default TTL
+    varyByUser: true,
+    varyByQuery: true
+  }
+}));
 
 // Initialize AI Agents
 const discoveryAgent = new BusinessDiscoveryAgent();
@@ -50,11 +189,17 @@ const clients = new Set();
 
 wss.on('connection', (ws) => {
   clients.add(ws);
-  console.log('Client connected to WebSocket');
+  logger.info('WebSocket client connected', { 
+    type: 'websocket',
+    totalClients: clients.size 
+  });
   
   ws.on('close', () => {
     clients.delete(ws);
-    console.log('Client disconnected from WebSocket');
+    logger.info('WebSocket client disconnected', { 
+      type: 'websocket',
+      totalClients: clients.size 
+    });
   });
 });
 
@@ -96,8 +241,65 @@ app.get('/', (req, res) => {
 
 // Routes
 
+// Authentication routes (public)
+app.use('/api/auth', authRoutes);
+
+// Rate limiting management routes (admin only)
+app.use('/api/rate-limit', authenticateToken, rateLimitRoutes);
+
+// Cache management routes (admin/developer only)
+app.use('/api/cache', authenticateToken, cacheRoutes);
+
+// Performance monitoring routes (developer/admin only)
+app.use('/api/performance', authenticateToken, performanceRoutes);
+
+// Logging management routes (developer/admin only)
+app.use('/api/logging', authenticateToken, loggingRoutes);
+
+// Chat system routes (public and authenticated)
+app.use('/api/chat', chatRoutes);
+
+// APM monitoring routes (developer/admin only)
+app.use('/api/apm', authenticateToken, apmRoutes);
+
+// Error tracking routes (developer/admin only)
+app.use('/api/errors', authenticateToken, errorRoutes);
+
 // Health check
 app.get('/api/health', (req, res) => {
+  const dbType = getDatabaseType();
+  const db = getDatabase();
+  
+  let dbStatus = 'connected';
+  let dbMetrics = null;
+  
+  if (dbType === 'postgres') {
+    const poolStatus = db.getPoolStatus();
+    dbStatus = poolStatus.status;
+    dbMetrics = {
+      type: 'postgresql',
+      pool: {
+        total: poolStatus.totalCount,
+        idle: poolStatus.idleCount,
+        waiting: poolStatus.waitingCount
+      },
+      performance: db.getMetrics()
+    };
+  } else {
+    dbMetrics = {
+      type: 'sqlite',
+      status: 'connected'
+    };
+  }
+
+  // Get chat service statistics
+  const chatStats = chatService.getStatistics();
+  const wsStats = websocketServer.getConnectionStats();
+  
+  // Get APM metrics
+  const apmMetrics = apmService.getCurrentMetrics();
+  const apmAlerts = apmService.getActiveAlerts();
+
   res.json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
@@ -106,58 +308,45 @@ app.get('/api/health', (req, res) => {
       proposal: proposalAgent.getStatus(),
       builder: builderAgent.getStatus()
     },
-    database: 'connected'
+    database: dbStatus,
+    database_metrics: dbMetrics,
+    cache: cacheService.isConnected ? 'connected' : 'disconnected',
+    chat: {
+      activeSessions: chatStats.activeSessions,
+      queuedSessions: chatStats.queuedSessions,
+      totalAgents: chatStats.agents.total,
+      availableAgents: chatStats.agents.available
+    },
+    websocket: {
+      totalConnections: wsStats.totalConnections,
+      authenticatedConnections: wsStats.authenticatedConnections,
+      activeChatSessions: wsStats.activeSessions
+    },
+    monitoring: {
+      database: databaseMonitor.isMonitoring,
+      alerts: databaseMonitor.getActiveAlerts().length
+    },
+    apm: {
+      isMonitoring: apmMetrics.isMonitoring,
+      responseTime: apmMetrics.responseTime.average,
+      throughput: apmMetrics.throughput.requestsPerSecond,
+      errorRate: apmMetrics.errorRate.current,
+      activeRequests: apmMetrics.activeRequests,
+      alerts: apmAlerts.length,
+      systemResources: {
+        cpu: apmMetrics.systemResources.cpu.usage,
+        memory: apmMetrics.systemResources.memory.usage
+      }
+    }
   });
 });
 
-// Developer Dashboard Metrics
-app.get('/api/developer/metrics', async (req, res) => {
+// Developer Dashboard Metrics (requires developer role)
+app.get('/api/developer/metrics', authenticateToken, requireRole('developer'), analyticsCache, async (req, res) => {
   try {
-    const db = getDatabase();
-    
-    const totalDiscovered = await new Promise((resolve, reject) => {
-      db.get('SELECT COUNT(*) as count FROM businesses', (err, row) => {
-        if (err) reject(err);
-        else resolve(row.count);
-      });
-    });
-
-    const proposalsSent = await new Promise((resolve, reject) => {
-      db.get('SELECT COUNT(*) as count FROM proposals WHERE status = "sent"', (err, row) => {
-        if (err) reject(err);
-        else resolve(row.count);
-      });
-    });
-
-    const interestedResponses = await new Promise((resolve, reject) => {
-      db.get('SELECT COUNT(*) as count FROM proposals WHERE status = "interested"', (err, row) => {
-        if (err) reject(err);
-        else resolve(row.count);
-      });
-    });
-
-    const projectsBuilt = await new Promise((resolve, reject) => {
-      db.get('SELECT COUNT(*) as count FROM projects WHERE status = "completed"', (err, row) => {
-        if (err) reject(err);
-        else resolve(row.count);
-      });
-    });
-
-    const recentActivity = await new Promise((resolve, reject) => {
-      db.all(`
-        SELECT type, business_name as business, created_at as timestamp, status 
-        FROM activity_log 
-        ORDER BY created_at DESC 
-        LIMIT 20
-      `, (err, rows) => {
-        if (err) reject(err);
-        else resolve(rows.map(row => ({
-          ...row,
-          id: Math.random().toString(36).substr(2, 9),
-          timestamp: new Date(row.timestamp).toLocaleString()
-        })));
-      });
-    });
+    // Use cached database for better performance
+    const analytics = await cachedDb.getAnalytics();
+    const recentActivity = await cachedDb.getRecentActivity(20);
 
     // Get detailed agent status
     const agents = {
@@ -166,11 +355,14 @@ app.get('/api/developer/metrics', async (req, res) => {
       builder: builderAgent.getStatus()
     };
 
+    // Get cache metrics
+    const cacheMetrics = cacheService.getMetrics();
+
     res.json({
-      totalDiscovered,
-      proposalsSent,
-      interestedResponses,
-      projectsBuilt,
+      totalDiscovered: analytics.totalBusinesses,
+      proposalsSent: analytics.proposalsSent,
+      interestedResponses: analytics.interestedResponses,
+      projectsBuilt: analytics.projectsCompleted,
       activeRegions: ['New York', 'Los Angeles', 'Chicago', 'Austin'],
       peakSalesData: [
         { region: 'New York', revenue: 45200, growth: 18 },
@@ -178,17 +370,30 @@ app.get('/api/developer/metrics', async (req, res) => {
         { region: 'Chicago', revenue: 28400, growth: 22 },
         { region: 'Austin', revenue: 19600, growth: 25 }
       ],
-      recentActivity,
-      agents
+      recentActivity: recentActivity.map(row => ({
+        ...row,
+        id: Math.random().toString(36).substr(2, 9),
+        timestamp: new Date(row.created_at).toLocaleString()
+      })),
+      agents,
+      cache: {
+        hitRate: cacheMetrics.hitRate,
+        totalRequests: cacheMetrics.totalRequests,
+        isConnected: cacheMetrics.isConnected
+      }
     });
   } catch (error) {
-    console.error('Error fetching metrics:', error);
+    logger.error('Error fetching metrics', { 
+      error: error.message,
+      correlationId: req.correlationId,
+      userId: req.user?.id 
+    });
     res.status(500).json({ error: 'Failed to fetch metrics' });
   }
 });
 
-// Agent Control Routes
-app.post('/api/agents/:agentId/toggle', async (req, res) => {
+// Agent Control Routes (requires developer role)
+app.post('/api/agents/:agentId/toggle', authenticateToken, requireRole('developer'), agentLimiter, async (req, res) => {
   const { agentId } = req.params;
   
   try {
@@ -218,13 +423,93 @@ app.post('/api/agents/:agentId/toggle', async (req, res) => {
 
     res.json({ success: true, status: newStatus });
   } catch (error) {
-    console.error('Error toggling agent:', error);
+    logger.error('Error toggling agent', { 
+      error: error.message,
+      agentId,
+      correlationId: req.correlationId,
+      userId: req.user?.id 
+    });
     res.status(500).json({ error: 'Failed to toggle agent' });
   }
 });
 
-// Bulk Discovery Trigger
-app.post('/api/agents/discovery/bulk-scan', async (req, res) => {
+// Database monitoring routes (requires developer role)
+app.get('/api/database/metrics', authenticateToken, requireRole('developer'), async (req, res) => {
+  try {
+    const metrics = databaseMonitor.getCurrentMetrics();
+    res.json(metrics);
+  } catch (error) {
+    console.error('Error fetching database metrics:', error);
+    res.status(500).json({ error: 'Failed to fetch database metrics' });
+  }
+});
+
+app.get('/api/database/performance', authenticateToken, requireRole('developer'), async (req, res) => {
+  try {
+    const report = databaseMonitor.generatePerformanceReport();
+    res.json(report);
+  } catch (error) {
+    console.error('Error generating performance report:', error);
+    res.status(500).json({ error: 'Failed to generate performance report' });
+  }
+});
+
+app.post('/api/database/optimize', authenticateToken, requireRole('admin'), async (req, res) => {
+  try {
+    const dbType = getDatabaseType();
+    
+    if (dbType === 'postgres') {
+      const db = getDatabase();
+      const success = await db.optimizeDatabase();
+      
+      if (success) {
+        res.json({ 
+          success: true, 
+          message: 'Database optimization completed',
+          recommendations: databaseMonitor.getOptimizationRecommendations()
+        });
+      } else {
+        res.status(500).json({ error: 'Database optimization failed' });
+      }
+    } else {
+      res.json({ 
+        success: true, 
+        message: 'SQLite optimization is limited. Consider upgrading to PostgreSQL for production.',
+        type: 'sqlite'
+      });
+    }
+  } catch (error) {
+    console.error('Error optimizing database:', error);
+    res.status(500).json({ error: 'Failed to optimize database' });
+  }
+});
+
+app.get('/api/database/stats', authenticateToken, requireRole('developer'), async (req, res) => {
+  try {
+    const dbType = getDatabaseType();
+    
+    if (dbType === 'postgres') {
+      const db = getDatabase();
+      const stats = await db.getDatabaseStats();
+      res.json({
+        type: 'postgresql',
+        stats,
+        pool_status: db.getPoolStatus(),
+        metrics: db.getMetrics()
+      });
+    } else {
+      res.json({
+        type: 'sqlite',
+        message: 'Limited statistics available for SQLite',
+        monitoring: databaseMonitor.getCurrentMetrics()
+      });
+    }
+  } catch (error) {
+    console.error('Error fetching database stats:', error);
+    res.status(500).json({ error: 'Failed to fetch database statistics' });
+  }
+});
+app.post('/api/agents/discovery/bulk-scan', authenticateToken, requireRole('developer'), agentLimiter, async (req, res) => {
   const { regions } = req.body;
   
   try {
@@ -243,15 +528,14 @@ app.post('/api/agents/discovery/bulk-scan', async (req, res) => {
   }
 });
 
-// Business Discovery Routes
-app.get('/api/businesses', async (req, res) => {
+// Business Discovery Routes (requires authentication)
+app.get('/api/businesses', authenticateToken, searchLimiter, businessCache, async (req, res) => {
   try {
-    const db = getDatabase();
-    const businesses = await new Promise((resolve, reject) => {
-      db.all('SELECT * FROM businesses ORDER BY created_at DESC', (err, rows) => {
-        if (err) reject(err);
-        else resolve(rows);
-      });
+    const { region, limit = 50, offset = 0 } = req.query;
+    const businesses = await cachedDb.getBusinesses({ 
+      region, 
+      limit: parseInt(limit), 
+      offset: parseInt(offset) 
     });
 
     res.json(businesses);
@@ -261,8 +545,8 @@ app.get('/api/businesses', async (req, res) => {
   }
 });
 
-// Proposal Routes
-app.post('/api/proposals/generate', async (req, res) => {
+// Proposal Routes (requires authentication)
+app.post('/api/proposals/generate', authenticateToken, async (req, res) => {
   const { businessId } = req.body;
   
   try {
@@ -281,8 +565,8 @@ app.post('/api/proposals/generate', async (req, res) => {
   }
 });
 
-// Project Building Routes
-app.post('/api/projects/build', async (req, res) => {
+// Project Building Routes (requires authentication)
+app.post('/api/projects/build', authenticateToken, async (req, res) => {
   const { businessId, projectType } = req.body;
   
   try {
@@ -305,45 +589,68 @@ app.post('/api/projects/build', async (req, res) => {
 
 // Schedule automated business discovery every hour
 cron.schedule('0 * * * *', async () => {
-  console.log('Running automated business discovery...');
+  logger.info('Starting automated business discovery', { type: 'cron', job: 'business_discovery' });
   try {
     await discoveryAgent.runAutomatedDiscovery();
+    logger.info('Automated business discovery completed successfully', { type: 'cron', job: 'business_discovery' });
     broadcast({
       type: 'automated_discovery_completed',
       timestamp: new Date().toISOString()
     });
   } catch (error) {
-    console.error('Automated discovery failed:', error);
+    logger.error('Automated discovery failed', { 
+      type: 'cron',
+      job: 'business_discovery',
+      error: error.message,
+      stack: error.stack 
+    });
   }
 });
 
 // Schedule proposal generation every 30 minutes
 cron.schedule('*/30 * * * *', async () => {
-  console.log('Running automated proposal generation...');
+  logger.info('Starting automated proposal generation', { type: 'cron', job: 'proposal_generation' });
   try {
     await proposalAgent.runAutomatedProposals();
+    logger.info('Automated proposal generation completed successfully', { type: 'cron', job: 'proposal_generation' });
     broadcast({
       type: 'automated_proposals_completed',
       timestamp: new Date().toISOString()
     });
   } catch (error) {
-    console.error('Automated proposal generation failed:', error);
+    logger.error('Automated proposal generation failed', { 
+      type: 'cron',
+      job: 'proposal_generation',
+      error: error.message,
+      stack: error.stack 
+    });
   }
 });
 
 // Schedule project building for interested businesses every 2 hours
 cron.schedule('0 */2 * * *', async () => {
-  console.log('Running automated project building...');
+  logger.info('Starting automated project building', { type: 'cron', job: 'project_building' });
   try {
     await builderAgent.runAutomatedBuilding();
+    logger.info('Automated project building completed successfully', { type: 'cron', job: 'project_building' });
     broadcast({
       type: 'automated_building_completed',
       timestamp: new Date().toISOString()
     });
   } catch (error) {
-    console.error('Automated building failed:', error);
+    logger.error('Automated building failed', { 
+      type: 'cron',
+      job: 'project_building',
+      error: error.message,
+      stack: error.stack 
+    });
   }
 });
+
+// Error handling middleware (must be last)
+app.use(errorTrackingMiddleware); // Track errors before other error handling
+app.use(errorLogger);
+app.use(errorHandler);
 
 // Initialize database and start server
 const PORT = process.env.PORT || 3001;
@@ -352,15 +659,61 @@ const HOST = process.env.HOST || '0.0.0.0';
 async function startServer() {
   try {
     await initDatabase();
-    console.log('Database initialized successfully');
+    logger.info('Database initialized successfully', { 
+      type: 'startup',
+      database: getDatabaseType() 
+    });
+    
+    // Initialize cached database service
+    cachedDb.init();
+    logger.info('Cached database service initialized', { type: 'startup' });
+    
+    // Setup global error tracking
+    setupUnhandledRejectionTracking();
+    setupUncaughtExceptionTracking();
+    logger.info('Global error tracking initialized', { type: 'startup' });
+    
+    // Start database monitoring in production
+    if (process.env.NODE_ENV === 'production' || process.env.DB_MONITORING === 'true') {
+      databaseMonitor.startMonitoring();
+      logger.info('Database monitoring started', { type: 'startup' });
+    }
+    
+    // Initialize log aggregation service
+    logger.info('Log aggregation service initialized', { 
+      type: 'startup',
+      features: ['structured_logging', 'correlation_ids', 'centralized_aggregation']
+    });
     
     server.listen(PORT, HOST, () => {
+      logger.info('BizGrow AI Server started successfully', {
+        type: 'startup',
+        host: HOST,
+        port: PORT,
+        environment: process.env.NODE_ENV || 'development',
+        database: getDatabaseType().toUpperCase(),
+        features: {
+          logging: 'comprehensive',
+          monitoring: 'enabled',
+          security: 'enhanced',
+          caching: 'redis',
+          agents: 'active'
+        }
+      });
+      
       console.log(`🚀 BizGrow AI Server running on ${HOST}:${PORT}`);
       console.log(`📊 Health Check: http://${HOST}:${PORT}/health`);
       console.log(`🤖 AI Agents: Active and monitoring`);
+      console.log(`🗄️ Database: ${getDatabaseType().toUpperCase()}`);
+      console.log(`📝 Logging: Comprehensive with correlation IDs`);
       console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
     });
   } catch (error) {
+    logger.error('Failed to start server', { 
+      type: 'startup_error',
+      error: error.message,
+      stack: error.stack 
+    });
     console.error('Failed to start server:', error);
     process.exit(1);
   }
