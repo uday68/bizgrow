@@ -1,6 +1,8 @@
 import express from 'express';
 import { authenticateToken, requireRole } from '../middleware/auth.js';
 import chatService from '../services/chatService.js';
+import mediatorAgent from '../agents/MediatorAgent.js';
+import sharedAgentMemory from '../services/sharedAgentMemory.js';
 import logger from '../services/logger.js';
 
 const router = express.Router();
@@ -433,6 +435,273 @@ router.get('/queue', authenticateToken, requireRole('developer'), async (req, re
     res.status(500).json({
       success: false,
       error: 'Failed to retrieve session queue'
+    });
+  }
+});
+
+// Quotation endpoints
+
+// Generate quotation for customer
+router.post('/quotations/generate', async (req, res) => {
+  try {
+    const { businessId, customerId, services, customerPreferences = {} } = req.body;
+    
+    if (!businessId || !customerId || !services || !Array.isArray(services)) {
+      return res.status(400).json({
+        success: false,
+        error: 'businessId, customerId, and services array are required'
+      });
+    }
+    
+    const result = await mediatorAgent.generateQuotation(
+      businessId,
+      customerId,
+      services,
+      customerPreferences
+    );
+    
+    logger.info('Quotation generated via API', {
+      quotationId: result.quotation.id,
+      businessId,
+      customerId,
+      services: services.length,
+      correlationId: req.correlationId
+    });
+    
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    logger.error('Failed to generate quotation', {
+      error: error.message,
+      correlationId: req.correlationId
+    });
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to generate quotation'
+    });
+  }
+});
+
+// Get quotation by ID
+router.get('/quotations/:quotationId', async (req, res) => {
+  try {
+    const { quotationId } = req.params;
+    const quotation = sharedAgentMemory.getQuotation(quotationId);
+    
+    if (!quotation) {
+      return res.status(404).json({
+        success: false,
+        error: 'Quotation not found'
+      });
+    }
+    
+    res.json({
+      success: true,
+      data: quotation
+    });
+  } catch (error) {
+    logger.error('Failed to get quotation', {
+      error: error.message,
+      quotationId: req.params.quotationId,
+      correlationId: req.correlationId
+    });
+    res.status(500).json({
+      success: false,
+      error: 'Failed to retrieve quotation'
+    });
+  }
+});
+
+// Accept quotation
+router.post('/quotations/:quotationId/accept', async (req, res) => {
+  try {
+    const { quotationId } = req.params;
+    const { customerId, message = '' } = req.body;
+    
+    if (!customerId) {
+      return res.status(400).json({
+        success: false,
+        error: 'customerId is required'
+      });
+    }
+    
+    const result = await mediatorAgent.handleQuotationAcceptance(
+      quotationId,
+      customerId,
+      message
+    );
+    
+    logger.info('Quotation accepted via API', {
+      quotationId,
+      customerId,
+      correlationId: req.correlationId
+    });
+    
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    logger.error('Failed to accept quotation', {
+      error: error.message,
+      quotationId: req.params.quotationId,
+      correlationId: req.correlationId
+    });
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to accept quotation'
+    });
+  }
+});
+
+// Reject quotation
+router.post('/quotations/:quotationId/reject', async (req, res) => {
+  try {
+    const { quotationId } = req.params;
+    const { customerId, reason = '' } = req.body;
+    
+    if (!customerId) {
+      return res.status(400).json({
+        success: false,
+        error: 'customerId is required'
+      });
+    }
+    
+    const result = await mediatorAgent.handleQuotationRejection(
+      quotationId,
+      customerId,
+      reason
+    );
+    
+    logger.info('Quotation rejected via API', {
+      quotationId,
+      customerId,
+      reason,
+      correlationId: req.correlationId
+    });
+    
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    logger.error('Failed to reject quotation', {
+      error: error.message,
+      quotationId: req.params.quotationId,
+      correlationId: req.correlationId
+    });
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to reject quotation'
+    });
+  }
+});
+
+// Get all quotations for a business
+router.get('/quotations/business/:businessId', async (req, res) => {
+  try {
+    const { businessId } = req.params;
+    const quotations = sharedAgentMemory.getBusinessQuotations(businessId);
+    
+    res.json({
+      success: true,
+      data: {
+        quotations,
+        count: quotations.length
+      }
+    });
+  } catch (error) {
+    logger.error('Failed to get business quotations', {
+      error: error.message,
+      businessId: req.params.businessId,
+      correlationId: req.correlationId
+    });
+    res.status(500).json({
+      success: false,
+      error: 'Failed to retrieve quotations'
+    });
+  }
+});
+
+// Get service catalog
+router.get('/services/catalog', async (req, res) => {
+  try {
+    const catalog = sharedAgentMemory.getServiceCatalog();
+    
+    res.json({
+      success: true,
+      data: {
+        services: catalog,
+        count: catalog.length
+      }
+    });
+  } catch (error) {
+    logger.error('Failed to get service catalog', {
+      error: error.message,
+      correlationId: req.correlationId
+    });
+    res.status(500).json({
+      success: false,
+      error: 'Failed to retrieve service catalog'
+    });
+  }
+});
+
+// Get service recommendations
+router.post('/services/recommend', async (req, res) => {
+  try {
+    const { customerMessage, businessContext } = req.body;
+    
+    if (!customerMessage) {
+      return res.status(400).json({
+        success: false,
+        error: 'customerMessage is required'
+      });
+    }
+    
+    const recommendations = await mediatorAgent.getServiceRecommendations(
+      customerMessage,
+      businessContext
+    );
+    
+    res.json({
+      success: true,
+      data: {
+        recommendations,
+        count: recommendations.length
+      }
+    });
+  } catch (error) {
+    logger.error('Failed to get service recommendations', {
+      error: error.message,
+      correlationId: req.correlationId
+    });
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get recommendations'
+    });
+  }
+});
+
+// Get shared memory statistics (admin only)
+router.get('/memory/statistics', authenticateToken, requireRole('admin'), async (req, res) => {
+  try {
+    const statistics = sharedAgentMemory.getStatistics();
+    
+    res.json({
+      success: true,
+      data: statistics
+    });
+  } catch (error) {
+    logger.error('Failed to get memory statistics', {
+      error: error.message,
+      correlationId: req.correlationId
+    });
+    res.status(500).json({
+      success: false,
+      error: 'Failed to retrieve statistics'
     });
   }
 });

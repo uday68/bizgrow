@@ -48,11 +48,14 @@ import {
 import authRoutes from './routes/auth.js';
 import rateLimitRoutes from './routes/rateLimit.js';
 import cacheRoutes from './routes/cache.js';
+import enhancedSearchRoutes from './routes/enhancedSearch.js';
 import performanceRoutes from './routes/performance.js';
 import loggingRoutes from './routes/logging.js';
 import chatRoutes from './routes/chat.js';
 import apmRoutes from './routes/apm.js';
 import errorRoutes from './routes/errors.js';
+import proposalsRoutes from './routes/proposals.js';
+import businessesRoutes from './routes/businesses.js';
 
 // Import Cache Services
 import cacheService from './services/cacheService.js';
@@ -264,6 +267,15 @@ app.use('/api/apm', authenticateToken, apmRoutes);
 
 // Error tracking routes (developer/admin only)
 app.use('/api/errors', authenticateToken, errorRoutes);
+
+// Enhanced search routes (public and authenticated)
+app.use('/api/enhanced-search', enhancedSearchRoutes);
+
+// Businesses routes (authenticated)
+app.use('/api/businesses', authenticateToken, businessesRoutes);
+
+// Proposals routes (authenticated)
+app.use('/api/proposals', authenticateToken, proposalsRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -546,6 +558,44 @@ app.get('/api/businesses', authenticateToken, searchLimiter, businessCache, asyn
 });
 
 // Proposal Routes (requires authentication)
+app.get('/api/proposals', authenticateToken, async (req, res) => {
+  try {
+    const db = getDatabase();
+    const proposals = await cachedDb.getProposals();
+    res.json(proposals);
+  } catch (error) {
+    logger.error('Error fetching proposals', { 
+      error: error.message,
+      correlationId: req.correlationId,
+      userId: req.user?.id 
+    });
+    res.status(500).json({ error: 'Failed to fetch proposals' });
+  }
+});
+
+app.get('/api/proposals/:id', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  
+  try {
+    const db = getDatabase();
+    const proposal = await cachedDb.getProposalById(id);
+    
+    if (!proposal) {
+      return res.status(404).json({ error: 'Proposal not found' });
+    }
+    
+    res.json(proposal);
+  } catch (error) {
+    logger.error('Error fetching proposal', { 
+      error: error.message,
+      proposalId: id,
+      correlationId: req.correlationId,
+      userId: req.user?.id 
+    });
+    res.status(500).json({ error: 'Failed to fetch proposal' });
+  }
+});
+
 app.post('/api/proposals/generate', authenticateToken, async (req, res) => {
   const { businessId } = req.body;
   

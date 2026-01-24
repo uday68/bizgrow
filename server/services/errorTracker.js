@@ -60,6 +60,9 @@ class ErrorTracker extends EventEmitter {
       lastAnalysisTime: null
     };
     
+    // Store interval IDs for cleanup
+    this.intervals = [];
+    
     this.initialize();
   }
 
@@ -81,9 +84,10 @@ class ErrorTracker extends EventEmitter {
     this.startPeriodicAnalysis();
     
     // Clean up old data periodically
-    setInterval(() => {
+    const cleanupInterval = setInterval(() => {
       this.cleanupOldData();
     }, 60000); // Every minute
+    this.intervals.push(cleanupInterval);
   }
 
   /**
@@ -656,9 +660,10 @@ class ErrorTracker extends EventEmitter {
    */
   startPeriodicAnalysis() {
     // Run analysis every 5 minutes
-    setInterval(() => {
+    const analysisInterval = setInterval(() => {
       this.performErrorAnalysis();
     }, 5 * 60 * 1000);
+    this.intervals.push(analysisInterval);
   }
 
   /**
@@ -1035,6 +1040,24 @@ class ErrorTracker extends EventEmitter {
     }
     
     return recommendations;
+  }
+
+  /**
+   * Cleanup method to stop all intervals and timers
+   * Used for testing and graceful shutdown
+   */
+  cleanup() {
+    // Clear all intervals
+    this.intervals.forEach(interval => clearInterval(interval));
+    this.intervals = [];
+    
+    // Remove all event listeners
+    this.removeAllListeners();
+    
+    logger.info('Error Tracker cleaned up', {
+      type: 'error_tracker',
+      category: 'service_shutdown'
+    });
   }
 }
 

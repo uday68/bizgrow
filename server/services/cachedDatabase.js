@@ -275,22 +275,31 @@ class CachedDatabase {
   }
 
   /**
-   * Get proposals with caching
+   * Get proposals with caching (includes business information)
    */
   async getProposals(businessId = null, options = {}) {
     const { limit = null, status = null } = options;
     
-    let sql = 'SELECT * FROM proposals';
+    let sql = `
+      SELECT 
+        p.*,
+        b.name as business_name,
+        b.address as business_address,
+        b.phone as business_phone,
+        b.email as business_email
+      FROM proposals p
+      LEFT JOIN businesses b ON p.business_id = b.id
+    `;
     const params = [];
     const conditions = [];
     
     if (businessId) {
-      conditions.push('business_id = ?');
+      conditions.push('p.business_id = ?');
       params.push(businessId);
     }
     
     if (status) {
-      conditions.push('status = ?');
+      conditions.push('p.status = ?');
       params.push(status);
     }
     
@@ -298,7 +307,7 @@ class CachedDatabase {
       sql += ' WHERE ' + conditions.join(' AND ');
     }
     
-    sql += ' ORDER BY created_at DESC';
+    sql += ' ORDER BY p.created_at DESC';
     
     if (limit) {
       sql += ' LIMIT ?';
@@ -310,6 +319,29 @@ class CachedDatabase {
       ttl: 1800, // 30 minutes
       cacheKey: `proposals_${businessId || 'all'}_${status || 'all'}_${limit || 'all'}`
     });
+  }
+
+  /**
+   * Get proposal by ID with caching (includes business information)
+   */
+  async getProposalById(id) {
+    return await this.get(
+      `SELECT 
+        p.*,
+        b.name as business_name,
+        b.address as business_address,
+        b.phone as business_phone,
+        b.email as business_email
+      FROM proposals p
+      LEFT JOIN businesses b ON p.business_id = b.id
+      WHERE p.id = ?`,
+      [id],
+      {
+        namespace: 'proposals',
+        ttl: 1800,
+        cacheKey: `proposal_${id}`
+      }
+    );
   }
 
   /**

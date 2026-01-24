@@ -1,6 +1,8 @@
 import logger from './logger.js';
 import { v4 as uuidv4 } from 'uuid';
 import { EventEmitter } from 'events';
+import mediatorAgent from '../agents/MediatorAgent.js';
+import sharedAgentMemory from './sharedAgentMemory.js';
 
 // Chat service for managing customer support conversations
 class ChatService extends EventEmitter {
@@ -126,7 +128,59 @@ class ChatService extends EventEmitter {
       this.handleSystemMessage(sessionId, message);
     }
 
+    // If customer message and no agent assigned, use mediator AI
+    if (senderType === 'customer' && !session.assignedAgent) {
+      this.handleMediatorResponse(sessionId, session, message, messages);
+    }
+
     return message;
+  }
+
+  // Handle AI mediator response
+  async handleMediatorResponse(sessionId, session, customerMessage, conversationHistory) {
+    try {
+      // Get business context (use customerId as businessId for now)
+      const businessId = session.customerId;
+      
+      // Process message with mediator agent
+      const result = await mediatorAgent.processMessage(
+        sessionId,
+        session.customerId,
+        businessId,
+        customerMessage.content,
+        conversationHistory.map(msg => ({
+          role: msg.senderType === 'customer' ? 'customer' : 'agent',
+          content: msg.content
+        }))
+      );
+      
+      // Send AI response
+      setTimeout(async () => {
+        const aiMessage = await this.sendMessage(
+          sessionId,
+          'mediator_ai',
+          'agent',
+          result.response,
+          {
+            aiGenerated: true,
+            suggestedActions: result.suggestedActions
+          }
+        );
+        
+        // Emit AI response event
+        this.emit('aiResponse', {
+          sessionId,
+          message: aiMessage,
+          suggestedActions: result.suggestedActions
+        });
+      }, 1000); // Small delay to simulate typing
+      
+    } catch (error) {
+      logger.error('Mediator response failed', {
+        sessionId,
+        error: error.message
+      });
+    }
   }
 
   // Get chat session

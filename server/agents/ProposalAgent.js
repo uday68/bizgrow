@@ -1,6 +1,7 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import { getDatabase, logActivity, updateAgentStatus } from '../database/init.js';
 import nodemailer from 'nodemailer';
+import sharedAgentMemory from '../services/sharedAgentMemory.js';
 
 class ProposalAgent {
   constructor() {
@@ -60,8 +61,30 @@ class ProposalAgent {
     updateAgentStatus('proposal', 'active', this.currentTask);
 
     try {
+      // Store business context in shared memory
+      sharedAgentMemory.storeBusinessContext(businessId, 'proposal', {
+        businessName: business.name,
+        industry: business.industry,
+        digitalPresenceScore: business.digital_presence_score,
+        opportunityScore: business.opportunity_score,
+        website: business.website,
+        rating: business.rating
+      });
+
       const proposalContent = await this.createProposalContent(business);
       const proposalId = await this.saveProposal(businessId, proposalContent);
+
+      // Store agent interaction in shared memory
+      sharedAgentMemory.storeAgentInteraction(
+        businessId,
+        'proposal',
+        'generate_proposal',
+        {
+          proposalId,
+          services: proposalContent.proposedSolutions.length,
+          status: 'generated'
+        }
+      );
 
       // Attempt to send proposal if email is configured
       if (business.email && this.emailTransporter) {
