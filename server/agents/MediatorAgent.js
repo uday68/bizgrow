@@ -1,4 +1,4 @@
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import logger from '../services/logger.js';
 import sharedAgentMemory from '../services/sharedAgentMemory.js';
 
@@ -13,7 +13,7 @@ class MediatorAgent {
       throw new Error('GEMINI_API_KEY environment variable is required');
     }
     
-    this.geminiAI = new GoogleGenAI(process.env.GEMINI_API_KEY);
+    this.geminiAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     this.isActive = true;
   }
 
@@ -34,13 +34,11 @@ class MediatorAgent {
         serviceCatalog
       );
       
-      // Generate AI response
-      const response = await this.geminiAI.models.generateContent({
-        model: "gemini-2.0-flash-exp",
-        contents: prompt
-      });
-      
-      const aiResponse = response.text;
+      // Generate AI response using correct API
+      const model = this.geminiAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      const aiResponse = response.text();
       
       // Store conversation in shared memory
       sharedAgentMemory.storeConversation(businessId, {
@@ -190,12 +188,11 @@ Create a warm, engaging message that:
 4. Encourages them to accept or ask questions
 5. Keeps it concise (3-4 paragraphs max)`;
 
-    const response = await this.geminiAI.models.generateContent({
-      model: "gemini-2.0-flash-exp",
-      contents: prompt
-    });
+    const model = this.geminiAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
     
-    return response.text;
+    return response.text();
   }
 
   /**
@@ -305,12 +302,11 @@ ${businessContext ? `Business Context: ${JSON.stringify(businessContext)}` : ''}
 
 Return a JSON array of recommended service types (e.g., ["website", "digital-marketing"]) with brief reasoning.`;
 
-      const response = await this.geminiAI.models.generateContent({
-        model: "gemini-2.0-flash-exp",
-        contents: prompt
-      });
+      const model = this.geminiAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
       
-      const recommendations = JSON.parse(response.text);
+      const recommendations = JSON.parse(response.text());
       
       return recommendations;
       
