@@ -387,5 +387,98 @@ class ApiService {
       method: 'DELETE',
     });
   }
+
+  // Chat APIs
+  async createChatSession(customerInfo: {
+    customerId?: string;
+    name: string;
+    email?: string;
+  }) {
+    return this.request('/api/chat/sessions', {
+      method: 'POST',
+      body: JSON.stringify({ customerInfo }),
+    }, true); // Skip auth for public chat
+  }
+
+  async getChatSession(sessionId: string) {
+    return this.request(`/api/chat/sessions/${sessionId}`, {}, true);
+  }
+
+  async sendChatMessage(sessionId: string, content: string, senderId?: string) {
+    return this.request(`/api/chat/sessions/${sessionId}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({
+        content,
+        senderType: 'customer',
+        senderId: senderId || 'anonymous',
+      }),
+    }, true);
+  }
+
+  async closeChatSession(sessionId: string, reason?: string) {
+    return this.request(`/api/chat/sessions/${sessionId}/close`, {
+      method: 'POST',
+      body: JSON.stringify({ reason: reason || 'Session ended by customer' }),
+    }, true);
+  }
+
+  async getChatStatistics() {
+    return this.request('/api/chat/statistics');
+  }
+
+  async getActiveChatSessions(filters?: { status?: string; agentId?: string; limit?: number }) {
+    const params = new URLSearchParams(filters as any).toString();
+    return this.request(`/api/chat/sessions${params ? `?${params}` : ''}`);
+  }
+
+  // Quotation APIs
+  async generateQuotation(data: {
+    businessId: string;
+    customerId: string;
+    services: string[];
+    customerPreferences?: any;
+  }) {
+    return this.request('/api/chat/quotations/generate', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }, true); // Skip auth for public quotation generation
+  }
+
+  async getQuotation(quotationId: string) {
+    return this.request(`/api/chat/quotations/${quotationId}`, {}, true);
+  }
+
+  async acceptQuotation(quotationId: string, customerId: string, message?: string) {
+    return this.request(`/api/chat/quotations/${quotationId}/accept`, {
+      method: 'POST',
+      body: JSON.stringify({ customerId, message }),
+    }, true);
+  }
+
+  async rejectQuotation(quotationId: string, customerId: string, reason?: string) {
+    return this.request(`/api/chat/quotations/${quotationId}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ customerId, reason }),
+    }, true);
+  }
+
+  async getBusinessQuotations(businessId: string) {
+    return this.request(`/api/chat/quotations/business/${businessId}`, {}, true);
+  }
+
+  async getServiceCatalog() {
+    return this.request('/api/chat/services/catalog', {}, true);
+  }
+
+  async getServiceRecommendations(customerMessage: string, businessContext?: any) {
+    return this.request('/api/chat/services/recommend', {
+      method: 'POST',
+      body: JSON.stringify({ customerMessage, businessContext }),
+    }, true);
+  }
+
+  async getSharedMemoryStatistics() {
+    return this.request('/api/chat/memory/statistics');
+  }
 }
 export const apiService = new ApiService();

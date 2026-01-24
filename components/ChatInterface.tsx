@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { websocketService } from '../services/websocketService';
+import { apiService } from '../services/apiService';
 
 interface Message {
   id: string;
@@ -8,7 +9,48 @@ interface Message {
   senderType: 'customer' | 'agent' | 'system';
   content: string;
   timestamp: Date;
-  metadata?: any;
+  metadata?: {
+    aiGenerated?: boolean;
+    suggestedActions?: SuggestedAction[];
+    quotation?: Quotation;
+    [key: string]: any;
+  };
+}
+
+interface SuggestedAction {
+  type: string;
+  label: string;
+  priority: 'high' | 'medium' | 'low';
+  serviceType?: string;
+}
+
+interface Quotation {
+  id: string;
+  businessId: string;
+  customerId: string;
+  services: QuotationService[];
+  pricing: {
+    subtotal: number;
+    discounts: QuotationDiscount[];
+    total: number;
+  };
+  status: 'draft' | 'sent' | 'viewed' | 'accepted' | 'rejected';
+  validUntil: Date;
+  createdAt: Date;
+}
+
+interface QuotationService {
+  type: string;
+  name: string;
+  description: string;
+  basePrice: number;
+  timeline: string;
+}
+
+interface QuotationDiscount {
+  type: string;
+  description: string;
+  amount: number;
 }
 
 interface ChatSession {
@@ -50,6 +92,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const [agentTyping, setAgentTyping] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected'>('disconnected');
   const [error, setError] = useState<string | null>(null);
+  const [showQuotationModal, setShowQuotationModal] = useState(false);
+  const [selectedQuotation, setSelectedQuotation] = useState<Quotation | null>(null);
+  const [serviceCatalog, setServiceCatalog] = useState<QuotationService[]>([]);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout>();
@@ -66,6 +111,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   // Initialize chat session
   useEffect(() => {
     initializeChat();
+    loadServiceCatalog();
     return () => {
       if (session) {
         websocketService.send({
@@ -82,26 +128,18 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       setConnectionStatus('connecting');
       setError(null);
 
-      // Create chat session
-      const response = await fetch('/api/chat/sessions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          customerInfo: {
-            customerId,
-            name: customerName,
-            email: customerEmail
-          }
-        })
+      // Create chat session using apiService
+      const response = await apiService.createChatSession({
+        customerId,
+        name: customerName,
+        email: customerEmail
       });
 
-      if (!response.ok) {
+      if (!response.success) {
         throw new Error('Failed to create chat session');
       }
 
-      const { data: newSession } = await response.json();
+      const newSession = response.data;
       setSession(newSession);
       setMessages(newSession.messages || []);
       
@@ -255,24 +293,18 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           }
         });
       } else {
-        // Fallback to HTTP API
-        const response = await fetch(`/api/chat/sessions/${session.id}/messages`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            content: messageContent,
-            senderType: 'customer',
-            senderId: customerId || 'anonymous'
-          })
-        });
+        // Fallback to HTTP API using apiService
+        const response = await apiService.sendChatMessage(
+          session.id,
+          messageContent,
+          customerId || 'anonymous'
+        );
 
-        if (!response.ok) {
+        if (!response.success) {
           throw new Error('Failed to send message');
         }
 
-        const { data: message } = await response.json();
+        const message = response.data;
         const formattedMessage = {
           ...message,
           timestamp: new Date(message.timestamp)
@@ -329,15 +361,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     if (!session) return;
 
     try {
-      await fetch(`/api/chat/sessions/${session.id}/close`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          reason: 'Session ended by customer'
-        })
-      });
+      await apiService.closeChatSession(session.id, 'Session ended by customer');
 
       // Leave WebSocket room
       if (isConnected) {
@@ -349,6 +373,126 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
     } catch (error) {
       console.error('Failed to close chat:', error);
+    }
+  };
+
+  const loadServiceCatalog = async () => {
+    try {
+      const response = await apiService.getServiceCatalog();
+      if (response.success) {
+        setServiceCatalog(response.data.services);
+      }
+    } catch (error) {
+      console.error('Failed to load service catalog:', error);
+    }
+  };
+
+  const requestQuotation = async (services: string[]) => {
+    if (!session) return;
+
+    try {
+      const response = await apiService.generateQuotation({
+        businessId: session.customerId,
+        customerId: customerId || 'anonymous',
+        services,
+        customerPreferences: {}
+      });
+
+      if (!response.success) {
+        throw new Error('Failed to generate quotation');
+      }
+
+      const data = response.data;
+      setSelectedQuotation(data.quotation);
+      setShowQuotationModal(true);
+
+      // Add quotation message to chat
+      const quotationMessage: Message = {
+        id: `quotation_${Date.now()}`,
+        sessionId: session.id,
+        senderId: 'mediator_ai',
+        senderType: 'agent',
+        content: data.message,
+        timestamp: new Date(),
+        metadata: {
+          quotation: data.quotation,
+          aiGenerated: true
+        }
+      };
+      
+      setMessages(prev => [...prev, quotationMessage]);
+
+    } catch (error) {
+      console.error('Failed to request quotation:', error);
+      setError('Failed to generate quotation. Please try again.');
+    }
+  };
+
+  const acceptQuotation = async (quotationId: string) => {
+    try {
+      const response = await apiService.acceptQuotation(
+        quotationId,
+        customerId || 'anonymous',
+        'I accept this quotation'
+      );
+
+      if (!response.success) {
+        throw new Error('Failed to accept quotation');
+      }
+
+      const data = response.data;
+      
+      // Add system message
+      const systemMessage: Message = {
+        id: `system_${Date.now()}`,
+        sessionId: session?.id || '',
+        senderId: 'system',
+        senderType: 'system',
+        content: `✅ Quotation accepted! ${data.nextSteps}`,
+        timestamp: new Date(),
+      };
+      
+      setMessages(prev => [...prev, systemMessage]);
+      setShowQuotationModal(false);
+      setSelectedQuotation(null);
+
+    } catch (error) {
+      console.error('Failed to accept quotation:', error);
+      setError('Failed to accept quotation. Please try again.');
+    }
+  };
+
+  const rejectQuotation = async (quotationId: string, reason: string = '') => {
+    try {
+      const response = await apiService.rejectQuotation(
+        quotationId,
+        customerId || 'anonymous',
+        reason
+      );
+
+      if (!response.success) {
+        throw new Error('Failed to reject quotation');
+      }
+
+      const data = response.data;
+      
+      // Add system message
+      const systemMessage: Message = {
+        id: `system_${Date.now()}`,
+        sessionId: session?.id || '',
+        senderId: 'system',
+        senderType: 'system',
+        content: data.message,
+        timestamp: new Date(),
+      };
+      
+      setMessages(prev => [...prev, systemMessage]);
+      setShowQuotationModal(false);
+      setSelectedQuotation(null);
+
+    } catch (error) {
+      console.error('Failed to reject quotation:', error);
+      setError('Failed to reject quotation. Please try again.');
     }
   };
 
@@ -423,6 +567,54 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               </div>
               <div className="message-content">
                 {message.content}
+                
+                {/* Display quotation if present */}
+                {message.metadata?.quotation && (
+                  <div className="quotation-preview">
+                    <div className="quotation-header">
+                      <span className="quotation-icon">💼</span>
+                      <strong>Quotation Generated</strong>
+                    </div>
+                    <div className="quotation-summary">
+                      <div className="quotation-services">
+                        {message.metadata.quotation.services.length} service(s)
+                      </div>
+                      <div className="quotation-total">
+                        Total: ${message.metadata.quotation.pricing.total.toFixed(2)}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setSelectedQuotation(message.metadata.quotation);
+                        setShowQuotationModal(true);
+                      }}
+                      className="view-quotation-btn"
+                    >
+                      View Details
+                    </button>
+                  </div>
+                )}
+                
+                {/* Display suggested actions */}
+                {message.metadata?.suggestedActions && message.metadata.suggestedActions.length > 0 && (
+                  <div className="suggested-actions">
+                    {message.metadata.suggestedActions.map((action: SuggestedAction, idx: number) => (
+                      <button
+                        key={idx}
+                        onClick={() => {
+                          if (action.type === 'generate_quotation') {
+                            // Show service selection for quotation
+                            const defaultServices = ['website', 'digital-marketing'];
+                            requestQuotation(defaultServices);
+                          }
+                        }}
+                        className={`action-btn priority-${action.priority}`}
+                      >
+                        {action.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           ))}
@@ -515,6 +707,72 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           </div>
         )}
       </div>
+
+      {/* Quotation Modal */}
+      {showQuotationModal && selectedQuotation && (
+        <div className="quotation-modal-overlay" onClick={() => setShowQuotationModal(false)}>
+          <div className="quotation-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Quotation Details</h3>
+              <button onClick={() => setShowQuotationModal(false)} className="modal-close">×</button>
+            </div>
+            
+            <div className="modal-body">
+              <div className="quotation-services-list">
+                <h4>Services</h4>
+                {selectedQuotation.services.map((service, idx) => (
+                  <div key={idx} className="service-item">
+                    <div className="service-header">
+                      <strong>{service.name}</strong>
+                      <span className="service-price">${service.basePrice.toFixed(2)}</span>
+                    </div>
+                    <p className="service-description">{service.description}</p>
+                    <div className="service-timeline">Timeline: {service.timeline}</div>
+                  </div>
+                ))}
+              </div>
+              
+              <div className="quotation-pricing">
+                <div className="pricing-row">
+                  <span>Subtotal:</span>
+                  <span>${selectedQuotation.pricing.subtotal.toFixed(2)}</span>
+                </div>
+                
+                {selectedQuotation.pricing.discounts.map((discount, idx) => (
+                  <div key={idx} className="pricing-row discount">
+                    <span>{discount.description}:</span>
+                    <span>-${discount.amount.toFixed(2)}</span>
+                  </div>
+                ))}
+                
+                <div className="pricing-row total">
+                  <strong>Total:</strong>
+                  <strong>${selectedQuotation.pricing.total.toFixed(2)}</strong>
+                </div>
+              </div>
+              
+              <div className="quotation-validity">
+                Valid until: {new Date(selectedQuotation.validUntil).toLocaleDateString()}
+              </div>
+            </div>
+            
+            <div className="modal-footer">
+              <button
+                onClick={() => rejectQuotation(selectedQuotation.id, 'Not interested')}
+                className="btn-reject"
+              >
+                Decline
+              </button>
+              <button
+                onClick={() => acceptQuotation(selectedQuotation.id)}
+                className="btn-accept"
+              >
+                Accept Quotation
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <style jsx>{`
         .chat-interface {
@@ -831,6 +1089,271 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
         .messages-container::-webkit-scrollbar-thumb:hover {
           background: #a8a8a8;
+        }
+
+        /* Quotation styles */
+        .quotation-preview {
+          margin-top: 12px;
+          padding: 12px;
+          background: #f0f9ff;
+          border: 1px solid #bae6fd;
+          border-radius: 8px;
+        }
+
+        .quotation-header {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          margin-bottom: 8px;
+          color: #0369a1;
+          font-weight: 600;
+        }
+
+        .quotation-icon {
+          font-size: 18px;
+        }
+
+        .quotation-summary {
+          display: flex;
+          justify-content: space-between;
+          margin-bottom: 8px;
+          font-size: 13px;
+          color: #0c4a6e;
+        }
+
+        .quotation-total {
+          font-weight: 600;
+        }
+
+        .view-quotation-btn {
+          width: 100%;
+          padding: 6px 12px;
+          background: #0284c7;
+          color: white;
+          border: none;
+          border-radius: 6px;
+          font-size: 13px;
+          font-weight: 500;
+          cursor: pointer;
+        }
+
+        .view-quotation-btn:hover {
+          background: #0369a1;
+        }
+
+        .suggested-actions {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+          margin-top: 8px;
+        }
+
+        .action-btn {
+          padding: 4px 10px;
+          border: 1px solid #e1e5e9;
+          border-radius: 12px;
+          background: white;
+          font-size: 12px;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .action-btn:hover {
+          background: #f8f9fa;
+          border-color: #007bff;
+        }
+
+        .action-btn.priority-high {
+          border-color: #dc3545;
+          color: #dc3545;
+        }
+
+        .action-btn.priority-medium {
+          border-color: #ffc107;
+          color: #856404;
+        }
+
+        /* Quotation Modal */
+        .quotation-modal-overlay {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: rgba(0, 0, 0, 0.5);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 1000;
+        }
+
+        .quotation-modal {
+          background: white;
+          border-radius: 12px;
+          width: 90%;
+          max-width: 500px;
+          max-height: 80vh;
+          overflow: hidden;
+          display: flex;
+          flex-direction: column;
+          box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+        }
+
+        .modal-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 16px 20px;
+          border-bottom: 1px solid #e1e5e9;
+        }
+
+        .modal-header h3 {
+          margin: 0;
+          font-size: 18px;
+          color: #1a1a1a;
+        }
+
+        .modal-close {
+          background: none;
+          border: none;
+          font-size: 24px;
+          cursor: pointer;
+          color: #6c757d;
+          padding: 0;
+          width: 30px;
+          height: 30px;
+          border-radius: 4px;
+        }
+
+        .modal-close:hover {
+          background: #f8f9fa;
+        }
+
+        .modal-body {
+          flex: 1;
+          overflow-y: auto;
+          padding: 20px;
+        }
+
+        .quotation-services-list h4 {
+          margin: 0 0 12px 0;
+          font-size: 14px;
+          color: #6c757d;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+
+        .service-item {
+          padding: 12px;
+          background: #f8f9fa;
+          border-radius: 8px;
+          margin-bottom: 12px;
+        }
+
+        .service-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 6px;
+        }
+
+        .service-header strong {
+          color: #1a1a1a;
+          font-size: 15px;
+        }
+
+        .service-price {
+          color: #007bff;
+          font-weight: 600;
+          font-size: 15px;
+        }
+
+        .service-description {
+          margin: 6px 0;
+          font-size: 13px;
+          color: #6c757d;
+          line-height: 1.4;
+        }
+
+        .service-timeline {
+          font-size: 12px;
+          color: #856404;
+          background: #fff3cd;
+          padding: 4px 8px;
+          border-radius: 4px;
+          display: inline-block;
+          margin-top: 4px;
+        }
+
+        .quotation-pricing {
+          margin-top: 20px;
+          padding: 16px;
+          background: #f8f9fa;
+          border-radius: 8px;
+        }
+
+        .pricing-row {
+          display: flex;
+          justify-content: space-between;
+          padding: 6px 0;
+          font-size: 14px;
+        }
+
+        .pricing-row.discount {
+          color: #28a745;
+        }
+
+        .pricing-row.total {
+          border-top: 2px solid #dee2e6;
+          margin-top: 8px;
+          padding-top: 12px;
+          font-size: 16px;
+        }
+
+        .quotation-validity {
+          margin-top: 12px;
+          padding: 8px 12px;
+          background: #fff3cd;
+          border-radius: 6px;
+          font-size: 12px;
+          color: #856404;
+          text-align: center;
+        }
+
+        .modal-footer {
+          display: flex;
+          gap: 12px;
+          padding: 16px 20px;
+          border-top: 1px solid #e1e5e9;
+        }
+
+        .modal-footer button {
+          flex: 1;
+          padding: 10px 20px;
+          border: none;
+          border-radius: 8px;
+          font-size: 14px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .btn-reject {
+          background: #f8f9fa;
+          color: #6c757d;
+        }
+
+        .btn-reject:hover {
+          background: #e9ecef;
+        }
+
+        .btn-accept {
+          background: #28a745;
+          color: white;
+        }
+
+        .btn-accept:hover {
+          background: #218838;
         }
       `}</style>
     </div>

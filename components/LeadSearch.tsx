@@ -1,18 +1,99 @@
 
 import React, { useState } from 'react';
-import { Search, MapPin, Globe, Phone, Star, Plus, Check, Loader2, Link as LinkIcon } from 'lucide-react';
+import { Search, MapPin, Globe, Phone, Star, Plus, Check, Loader2, Link as LinkIcon, FileText } from 'lucide-react';
 import { searchLeads } from '../services/geminiService';
 import { BusinessLead, SearchResult } from '../types';
+import { apiService } from '../services/apiService';
 
 interface LeadSearchProps {
   onSaveLead: (lead: BusinessLead) => void;
   savedLeadIds: string[];
 }
 
+interface QuotationService {
+  type: string;
+  name: string;
+  description: string;
+  basePrice: number;
+}
+
 const LeadSearch: React.FC<LeadSearchProps> = ({ onSaveLead, savedLeadIds }) => {
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<SearchResult | null>(null);
+  const [showQuotationModal, setShowQuotationModal] = useState(false);
+  const [selectedLead, setSelectedLead] = useState<BusinessLead | null>(null);
+  const [serviceCatalog, setServiceCatalog] = useState<QuotationService[]>([]);
+  const [selectedServices, setSelectedServices] = useState<string[]>([]);
+  const [quotationLoading, setQuotationLoading] = useState(false);
+  const [quotationSent, setQuotationSent] = useState(false);
+
+  // Load service catalog when modal opens
+  React.useEffect(() => {
+    if (showQuotationModal && serviceCatalog.length === 0) {
+      loadServiceCatalog();
+    }
+  }, [showQuotationModal]);
+
+  const loadServiceCatalog = async () => {
+    try {
+      const response = await apiService.getServiceCatalog();
+      if (response.success) {
+        setServiceCatalog(response.data.services);
+      }
+    } catch (error) {
+      console.error('Failed to load service catalog:', error);
+    }
+  };
+
+  const openQuotationModal = (lead: BusinessLead) => {
+    setSelectedLead(lead);
+    setSelectedServices([]);
+    setQuotationSent(false);
+    setShowQuotationModal(true);
+  };
+
+  const toggleService = (serviceType: string) => {
+    setSelectedServices(prev => 
+      prev.includes(serviceType)
+        ? prev.filter(s => s !== serviceType)
+        : [...prev, serviceType]
+    );
+  };
+
+  const sendQuotation = async () => {
+    if (!selectedLead || selectedServices.length === 0) return;
+
+    setQuotationLoading(true);
+    try {
+      const response = await apiService.generateQuotation({
+        businessId: selectedLead.id,
+        customerId: selectedLead.id,
+        services: selectedServices,
+        customerPreferences: {
+          businessName: selectedLead.name,
+          businessAddress: selectedLead.address
+        }
+      });
+
+      if (!response.success) {
+        throw new Error('Failed to generate quotation');
+      }
+
+      console.log('Quotation generated:', response.data);
+      
+      setQuotationSent(true);
+      setTimeout(() => {
+        setShowQuotationModal(false);
+      }, 2000);
+
+    } catch (error) {
+      console.error('Failed to send quotation:', error);
+      alert('Failed to send quotation. Please try again.');
+    } finally {
+      setQuotationLoading(false);
+    }
+  };
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -132,7 +213,14 @@ const LeadSearch: React.FC<LeadSearchProps> = ({ onSaveLead, savedLeadIds }) => 
                   <LinkIcon size={12} />
                   Google Maps
                 </a>
-                <span className="text-[10px] text-slate-400 italic">High Potential</span>
+                <button
+                  onClick={() => openQuotationModal(lead)}
+                  className="text-xs bg-indigo-600 text-white px-3 py-1.5 rounded-lg hover:bg-indigo-700 flex items-center gap-1 transition-colors"
+                  title="Send Quotation"
+                >
+                  <FileText size={12} />
+                  Send Quote
+                </button>
               </div>
             </div>
           ))}
@@ -167,6 +255,133 @@ const LeadSearch: React.FC<LeadSearchProps> = ({ onSaveLead, savedLeadIds }) => 
                 {link.title}
               </a>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Quotation Modal */}
+      {showQuotationModal && selectedLead && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowQuotationModal(false)}>
+          <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="p-6 border-b border-slate-200">
+              <div className="flex justify-between items-start">
+                <div>
+                  <h3 className="text-xl font-bold text-slate-900">Send Quotation</h3>
+                  <p className="text-sm text-slate-500 mt-1">{selectedLead.name}</p>
+                </div>
+                <button
+                  onClick={() => setShowQuotationModal(false)}
+                  className="text-slate-400 hover:text-slate-600 text-2xl"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6">
+              {quotationSent ? (
+                <div className="text-center py-12">
+                  <div className="bg-green-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Check className="text-green-600" size={32} />
+                  </div>
+                  <h4 className="text-lg font-semibold text-slate-900 mb-2">Quotation Sent!</h4>
+                  <p className="text-slate-500">The quotation has been generated and is ready for the customer.</p>
+                </div>
+              ) : (
+                <>
+                  <h4 className="text-sm font-semibold text-slate-700 mb-4 uppercase tracking-wide">Select Services</h4>
+                  
+                  {serviceCatalog.length === 0 ? (
+                    <div className="text-center py-8">
+                      <Loader2 className="animate-spin text-indigo-600 mx-auto mb-2" size={32} />
+                      <p className="text-slate-500">Loading services...</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {serviceCatalog.map((service) => (
+                        <div
+                          key={service.type}
+                          onClick={() => toggleService(service.type)}
+                          className={`p-4 border-2 rounded-xl cursor-pointer transition-all ${
+                            selectedServices.includes(service.type)
+                              ? 'border-indigo-600 bg-indigo-50'
+                              : 'border-slate-200 hover:border-indigo-300'
+                          }`}
+                        >
+                          <div className="flex items-start gap-3">
+                            <div className={`mt-1 w-5 h-5 rounded border-2 flex items-center justify-center ${
+                              selectedServices.includes(service.type)
+                                ? 'border-indigo-600 bg-indigo-600'
+                                : 'border-slate-300'
+                            }`}>
+                              {selectedServices.includes(service.type) && (
+                                <Check size={14} className="text-white" />
+                              )}
+                            </div>
+                            <div className="flex-1">
+                              <div className="flex justify-between items-start mb-1">
+                                <h5 className="font-semibold text-slate-900">{service.name}</h5>
+                                <span className="text-indigo-600 font-bold">${service.basePrice}</span>
+                              </div>
+                              <p className="text-sm text-slate-600">{service.description}</p>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {selectedServices.length > 0 && (
+                    <div className="mt-6 p-4 bg-indigo-50 rounded-xl">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm font-semibold text-slate-700">
+                          {selectedServices.length} service(s) selected
+                        </span>
+                        <span className="text-lg font-bold text-indigo-600">
+                          ${serviceCatalog
+                            .filter(s => selectedServices.includes(s.type))
+                            .reduce((sum, s) => sum + s.basePrice, 0)
+                            .toFixed(2)}
+                        </span>
+                      </div>
+                      {selectedServices.length >= 3 && (
+                        <p className="text-xs text-green-600 mt-2">
+                          ✨ 15% bulk discount will be applied!
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {!quotationSent && (
+              <div className="p-6 border-t border-slate-200 flex gap-3">
+                <button
+                  onClick={() => setShowQuotationModal(false)}
+                  className="flex-1 px-6 py-3 bg-slate-100 text-slate-700 rounded-xl font-semibold hover:bg-slate-200 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={sendQuotation}
+                  disabled={selectedServices.length === 0 || quotationLoading}
+                  className="flex-1 px-6 py-3 bg-indigo-600 text-white rounded-xl font-semibold hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {quotationLoading ? (
+                    <>
+                      <Loader2 className="animate-spin" size={20} />
+                      Generating...
+                    </>
+                  ) : (
+                    <>
+                      <FileText size={20} />
+                      Send Quotation
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
