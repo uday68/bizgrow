@@ -159,6 +159,13 @@ app.get('/api/developer/metrics', async (req, res) => {
       });
     });
 
+    // Get detailed agent status
+    const agents = {
+      discovery: discoveryAgent.getStatus(),
+      proposal: proposalAgent.getStatus(),
+      builder: builderAgent.getStatus()
+    };
+
     res.json({
       totalDiscovered,
       proposalsSent,
@@ -171,7 +178,8 @@ app.get('/api/developer/metrics', async (req, res) => {
         { region: 'Chicago', revenue: 28400, growth: 22 },
         { region: 'Austin', revenue: 19600, growth: 25 }
       ],
-      recentActivity
+      recentActivity,
+      agents
     });
   } catch (error) {
     console.error('Error fetching metrics:', error);

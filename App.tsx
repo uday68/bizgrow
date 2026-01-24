@@ -21,7 +21,9 @@ import LeadSearch from './components/LeadSearch';
 import Dashboard from './components/Dashboard';
 import ProposalView from './components/ProposalView';
 import DeveloperDashboard from './components/DeveloperDashboardSimple';
+import ModernDashboard from './components/ModernDashboard';
 import { BusinessLead } from './types';
+import './styles/glassmorphism.css';
 
 const Sidebar = () => (
   <aside className="w-64 bg-slate-900 text-white min-h-screen flex flex-col fixed left-0 top-0 z-50">
@@ -40,6 +42,10 @@ const Sidebar = () => (
       <Link to="/developer" className="flex items-center gap-3 p-3 hover:bg-slate-800 rounded-lg transition-colors group">
         <TrendingUp size={20} className="text-slate-400 group-hover:text-white" />
         <span className="font-medium">AI Engine</span>
+      </Link>
+      <Link to="/modern" className="flex items-center gap-3 p-3 hover:bg-slate-800 rounded-lg transition-colors group">
+        <TrendingUp size={20} className="text-slate-400 group-hover:text-white" />
+        <span className="font-medium">Modern Dashboard</span>
       </Link>
       <Link to="/search" className="flex items-center gap-3 p-3 hover:bg-slate-800 rounded-lg transition-colors group">
         <Search size={20} className="text-slate-400 group-hover:text-white" />
@@ -85,6 +91,7 @@ const App: React.FC = () => {
           <Routes>
             <Route path="/" element={<Dashboard leads={savedLeads} onUpdateStatus={handleUpdateLeadStatus} />} />
             <Route path="/developer" element={<DeveloperDashboard />} />
+            <Route path="/modern" element={<ModernDashboard />} />
             <Route path="/search" element={<LeadSearch onSaveLead={handleSaveLead} savedLeadIds={savedLeads.map(l => l.id)} />} />
             <Route path="/proposal/:id" element={<ProposalView leads={savedLeads} />} />
           </Routes>
