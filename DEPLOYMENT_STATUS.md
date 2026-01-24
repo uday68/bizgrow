@@ -4,7 +4,25 @@
 
 **Date:** January 24, 2026  
 **Time:** Current  
-**Status:** Code pushed to GitHub, verifying Railway deployment
+**Status:** Fixed Google Generative AI SDK import and pushed to Railway
+
+### Recent Fix Applied
+- **Issue**: Incorrect import `@google/genai` → Fixed to `@google/generative-ai`
+- **Issue**: Incorrect API usage `geminiAI.models.generateContent()` → Fixed to `geminiAI.getGenerativeModel().generateContent()`
+- **Commit**: 6680de4 - "fix: Correct Google Generative AI SDK import and API usage"
+- **Status**: Pushed to GitHub, Railway is rebuilding (2-3 minutes)
+
+### What Was Fixed
+1. Updated `server/agents/MediatorAgent.js`:
+   - Changed import from `@google/genai` to `@google/generative-ai`
+   - Fixed API calls to use correct SDK methods
+   - Updated `processMessage()`, `generateQuotationMessage()`, and `getServiceRecommendations()`
+
+2. Updated `server/package.json`:
+   - Changed dependency from `@google/genai` to `@google/generative-ai`
+
+3. Created `verify-ai-chat-deployment.bat`:
+   - Automated verification script for all endpoints
 
 ---
 
