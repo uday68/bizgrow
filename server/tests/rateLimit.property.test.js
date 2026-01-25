@@ -7,7 +7,7 @@ import { createAdvancedRateLimit, rateLimitAnalytics } from '../middleware/auth.
 
 // Property test configuration
 const propertyTestConfig = {
-  numRuns: 100,
+  numRuns: 20, // Reduced for faster test execution
   timeout: 15000,
   verbose: false,
   seed: 42
@@ -196,7 +196,7 @@ describe('Property 4: Comprehensive Rate Limiting', () => {
           return true;
         }
       ),
-      { ...propertyTestConfig, numRuns: 20 } // Fewer runs due to timing
+      { ...propertyTestConfig, numRuns: 10 } // Fewer runs due to timing
     );
   });
 

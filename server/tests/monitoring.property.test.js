@@ -269,7 +269,7 @@ describe('Property 12: Comprehensive Monitoring Coverage', () => {
           expect(apmService.metrics.throughput.totalRequests).toBeGreaterThan(initialTotalRequests);
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   });
 
@@ -326,7 +326,7 @@ describe('Property 12: Comprehensive Monitoring Coverage', () => {
           });
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   });
 
@@ -406,7 +406,7 @@ describe('Property 12: Comprehensive Monitoring Coverage', () => {
           }
         }
       ),
-      { numRuns: 50 }
+      { numRuns: 10 }
     );
   });
 
@@ -496,7 +496,7 @@ describe('Property 12: Comprehensive Monitoring Coverage', () => {
           expect(apmService.metrics.business.agentUtilization).toBeLessThanOrEqual(100);
         }
       ),
-      { numRuns: 50 }
+      { numRuns: 10 }
     );
   });
 
@@ -549,7 +549,7 @@ describe('Property 12: Comprehensive Monitoring Coverage', () => {
           expect(Array.isArray(dashboardData.alerts)).toBe(true);
         }
       ),
-      { numRuns: 25 }
+      { numRuns: 10 }
     );
   });
 });

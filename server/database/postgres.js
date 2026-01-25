@@ -383,6 +383,33 @@ class PostgreSQLDatabase {
   }
 
   /**
+   * Reconnect database pool
+   */
+  async reconnect() {
+    console.log('🔄 Reconnecting PostgreSQL pool...');
+    
+    try {
+      // Close existing pool
+      if (this.pool) {
+        await this.pool.end();
+      }
+      
+      // Reset connection state
+      this.isConnected = false;
+      this.connectionAttempts = 0;
+      
+      // Reinitialize pool
+      await this.init();
+      
+      console.log('✅ PostgreSQL pool reconnected successfully');
+      return true;
+    } catch (error) {
+      console.error('❌ Failed to reconnect PostgreSQL pool:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Get connection pool status
    */
   getPoolStatus() {

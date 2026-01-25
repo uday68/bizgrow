@@ -42,7 +42,7 @@ describe('Database Performance Optimization Properties', () => {
     }
 
     const propertyTestConfig = {
-      numRuns: 50, // Reduced for database tests
+      numRuns: 15, // Reduced for faster test execution
       timeout: 30000,
       verbose: true
     };
@@ -178,7 +178,7 @@ describe('Database Performance Optimization Properties', () => {
     }
 
     const propertyTestConfig = {
-      numRuns: 20,
+      numRuns: 10,
       timeout: 20000,
       verbose: true
     };

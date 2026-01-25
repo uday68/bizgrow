@@ -480,5 +480,256 @@ class ApiService {
   async getSharedMemoryStatistics() {
     return this.request('/api/chat/memory/statistics');
   }
+
+  // APM (Application Performance Monitoring) APIs
+  async getAPMMetrics() {
+    return this.request('/api/apm/metrics');
+  }
+
+  async getAPMAlerts() {
+    return this.request('/api/apm/alerts');
+  }
+
+  async acknowledgeAPMAlert(alertId: string) {
+    return this.request(`/api/apm/alerts/${alertId}/acknowledge`, {
+      method: 'POST',
+    });
+  }
+
+  async getAPMDashboard(timeRange: string = '1h') {
+    return this.request(`/api/apm/dashboard?timeRange=${timeRange}`);
+  }
+
+  async getAPMMetricsHistory(timeRange: string = '1h') {
+    return this.request(`/api/apm/metrics/history?timeRange=${timeRange}`);
+  }
+
+  // Error Tracking APIs
+  async getRecentErrors(limit: number = 50) {
+    return this.request(`/api/errors/recent?limit=${limit}`);
+  }
+
+  async getErrorStats() {
+    return this.request('/api/errors/stats/overview');
+  }
+
+  async getErrorAnalysis() {
+    return this.request('/api/errors/analysis/current');
+  }
+
+  async getErrorById(errorId: string) {
+    return this.request(`/api/errors/${errorId}`);
+  }
+
+  async acknowledgeError(errorId: string) {
+    return this.request(`/api/errors/${errorId}/acknowledge`, {
+      method: 'POST',
+    });
+  }
+
+  async resolveError(errorId: string, resolution?: string) {
+    return this.request(`/api/errors/${errorId}/resolve`, {
+      method: 'POST',
+      body: JSON.stringify({ resolution }),
+    });
+  }
+
+  // Generic GET method for backward compatibility
+  async get(endpoint: string) {
+    return this.request(endpoint);
+  }
+
+  // Generic POST method
+  async post(endpoint: string, data?: any) {
+    return this.request(endpoint, {
+      method: 'POST',
+      body: data ? JSON.stringify(data) : undefined,
+    });
+  }
+
+  // Generic PUT method
+  async put(endpoint: string, data?: any) {
+    return this.request(endpoint, {
+      method: 'PUT',
+      body: data ? JSON.stringify(data) : undefined,
+    });
+  }
+
+  // Generic DELETE method
+  async delete(endpoint: string) {
+    return this.request(endpoint, {
+      method: 'DELETE',
+    });
+  }
+
+  // Get auth token for WebSocket connections
+  getToken(): string | null {
+    return AuthTokenManager.getAccessToken();
+  }
+
+  // Tenant Management APIs
+  async getTenants() {
+    return this.request('/api/tenants');
+  }
+
+  async getTenantById(tenantId: string) {
+    return this.request(`/api/tenants/${tenantId}`);
+  }
+
+  async createTenant(tenantData: any) {
+    return this.request('/api/tenants', {
+      method: 'POST',
+      body: JSON.stringify(tenantData),
+    });
+  }
+
+  async updateTenant(tenantId: string, tenantData: any) {
+    return this.request(`/api/tenants/${tenantId}`, {
+      method: 'PUT',
+      body: JSON.stringify(tenantData),
+    });
+  }
+
+  async deleteTenant(tenantId: string) {
+    return this.request(`/api/tenants/${tenantId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Notification APIs
+  async getNotifications(filters?: { read?: boolean; limit?: number }) {
+    const params = new URLSearchParams(filters as any).toString();
+    return this.request(`/api/notifications${params ? `?${params}` : ''}`);
+  }
+
+  async markNotificationAsRead(notificationId: string) {
+    return this.request(`/api/notifications/${notificationId}/read`, {
+      method: 'POST',
+    });
+  }
+
+  async deleteNotification(notificationId: string) {
+    return this.request(`/api/notifications/${notificationId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Database Health APIs
+  async getDatabaseHealth() {
+    return this.request('/api/database-health');
+  }
+
+  async getDatabaseMetrics() {
+    return this.request('/api/database-health/metrics');
+  }
+
+  // Backup Management APIs
+  async getBackupStatus() {
+    return this.request('/api/backup/status');
+  }
+
+  async listBackups() {
+    return this.request('/api/backup/list');
+  }
+
+  async createBackup(label?: string) {
+    return this.request('/api/backup/create', {
+      method: 'POST',
+      body: JSON.stringify({ label }),
+    });
+  }
+
+  async restoreBackup(backupName: string) {
+    return this.request('/api/backup/restore', {
+      method: 'POST',
+      body: JSON.stringify({ backupName }),
+    });
+  }
+
+  async deleteBackup(backupName: string) {
+    return this.request(`/api/backup/${backupName}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Migration Management APIs
+  async getMigrationStatus() {
+    return this.request('/api/migrations/status');
+  }
+
+  async runMigrations(dryRun = false) {
+    return this.request('/api/migrations/migrate', {
+      method: 'POST',
+      body: JSON.stringify({ dryRun }),
+    });
+  }
+
+  async rollbackMigration(targetVersion: string) {
+    return this.request('/api/migrations/rollback', {
+      method: 'POST',
+      body: JSON.stringify({ targetVersion }),
+    });
+  }
+
+  async getMigrationHistory() {
+    return this.request('/api/migrations/history');
+  }
+
+  async getAvailableMigrations() {
+    return this.request('/api/migrations/available');
+  }
+
+  // Agent Health & Capacity APIs
+  async getAgentHealth(agentName?: string) {
+    return this.request(agentName ? `/api/agentHealth/${agentName}` : '/api/agentHealth');
+  }
+
+  async restartAgent(agentName: string) {
+    return this.request(`/api/agentHealth/${agentName}/restart`, {
+      method: 'POST',
+    });
+  }
+
+  async optimizeAgent(agentName: string) {
+    return this.request(`/api/agentHealth/${agentName}/optimize`, {
+      method: 'POST',
+    });
+  }
+
+  async getCapacityMetrics() {
+    return this.request('/api/capacity/metrics');
+  }
+
+  async getAgentCapacity(agentName: string) {
+    return this.request(`/api/capacity/agent/${agentName}`);
+  }
+
+  // Tenant Analytics APIs
+  async getTenantAnalytics(tenantId: string, timeRange?: string) {
+    return this.request(`/api/tenantAnalytics/${tenantId}${timeRange ? `?timeRange=${timeRange}` : ''}`);
+  }
+
+  async getTenantUsageMetrics(tenantId: string) {
+    return this.request(`/api/tenantAnalytics/${tenantId}/usage`);
+  }
+
+  // Tenant Customization APIs
+  async getTenantCustomization(tenantId: string) {
+    return this.request(`/api/tenantCustomization/${tenantId}`);
+  }
+
+  async updateTenantBranding(tenantId: string, branding: any) {
+    return this.request(`/api/tenantCustomization/${tenantId}/branding`, {
+      method: 'PUT',
+      body: JSON.stringify(branding),
+    });
+  }
+
+  async updateTenantFeatureFlags(tenantId: string, features: any) {
+    return this.request(`/api/tenantCustomization/${tenantId}/features`, {
+      method: 'PUT',
+      body: JSON.stringify(features),
+    });
+  }
 }
 export const apiService = new ApiService();

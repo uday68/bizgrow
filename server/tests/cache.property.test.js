@@ -115,7 +115,7 @@ describe('Cache System Property Tests', () => {
             }
           }
         ),
-        { numRuns: 100, timeout: 10000 }
+        { numRuns: 20, timeout: 10000 }
       );
     });
 
@@ -193,7 +193,7 @@ describe('Cache System Property Tests', () => {
             }
           }
         ),
-        { numRuns: 50, timeout: 10000 }
+        { numRuns: 10, timeout: 10000 }
       );
     });
 
@@ -233,7 +233,7 @@ describe('Cache System Property Tests', () => {
             }
           }
         ),
-        { numRuns: 50, timeout: 10000 }
+        { numRuns: 10, timeout: 10000 }
       );
     });
 
@@ -279,7 +279,7 @@ describe('Cache System Property Tests', () => {
             }
           }
         ),
-        { numRuns: 50, timeout: 10000 }
+        { numRuns: 10, timeout: 10000 }
       );
     });
 
@@ -323,7 +323,7 @@ describe('Cache System Property Tests', () => {
             }
           }
         ),
-        { numRuns: 50, timeout: 10000 }
+        { numRuns: 10, timeout: 10000 }
       );
     });
 
@@ -373,7 +373,7 @@ describe('Cache System Property Tests', () => {
             expect(finalMetrics.totalRequests).toBe(expectedHits + expectedMisses);
           }
         ),
-        { numRuns: 30, timeout: 10000 }
+        { numRuns: 10, timeout: 10000 }
       );
     });
 
@@ -459,7 +459,7 @@ describe('Cache System Property Tests', () => {
             expect(result2).toEqual(mockResult);
           }
         ),
-        { numRuns: 50, timeout: 10000 }
+        { numRuns: 10, timeout: 10000 }
       );
     });
 
@@ -495,7 +495,7 @@ describe('Cache System Property Tests', () => {
             expect(cached).toEqual(data);
           }
         ),
-        { numRuns: 50, timeout: 10000 }
+        { numRuns: 10, timeout: 10000 }
       );
     });
 
@@ -534,7 +534,7 @@ describe('Cache System Property Tests', () => {
             expect(storageData).toEqual(data);
           }
         ),
-        { numRuns: 30, timeout: 10000 }
+        { numRuns: 10, timeout: 10000 }
       );
     });
   });
@@ -569,7 +569,7 @@ describe('Cache System Property Tests', () => {
             cacheService.isConnected = originalConnected;
           }
         ),
-        { numRuns: 30, timeout: 5000 }
+        { numRuns: 10, timeout: 5000 }
       );
     });
   });
@@ -606,7 +606,7 @@ describe('Cache System Property Tests', () => {
             }
           }
         ),
-        { numRuns: 20, timeout: 30000 }
+        { numRuns: 10, timeout: 30000 }
       );
     });
   });

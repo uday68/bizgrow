@@ -56,6 +56,14 @@ import apmRoutes from './routes/apm.js';
 import errorRoutes from './routes/errors.js';
 import proposalsRoutes from './routes/proposals.js';
 import businessesRoutes from './routes/businesses.js';
+import backupRoutes from './routes/backup.js';
+import migrationsRoutes from './routes/migrations.js';
+import databaseHealthRoutes from './routes/databaseHealth.js';
+import analyticsRoutes from './routes/analytics.js';
+import orchestratorRoutes from './routes/orchestrator.js';
+import agentHealthRoutes from './routes/agentHealth.js';
+import capacityRoutes from './routes/capacity.js';
+import notificationRoutes from './routes/notifications.js';
 
 // Import Cache Services
 import cacheService from './services/cacheService.js';
@@ -94,6 +102,16 @@ import {
   setupUnhandledRejectionTracking,
   setupUncaughtExceptionTracking
 } from './middleware/errorTracking.js';
+
+// Import Backup Service
+import backupService from './services/backupService.js';
+
+// Import Agent Orchestrator
+import agentOrchestrator from './services/agentOrchestrator.js';
+import agentHealthMonitor from './services/agentHealthMonitor.js';
+import agentErrorHandler from './services/agentErrorHandler.js';
+import agentCapacityManager from './services/agentCapacityManager.js';
+import notificationService from './services/notificationService.js';
 
 // Import AI Agents AFTER environment variables are loaded
 import BusinessDiscoveryAgent from './agents/BusinessDiscoveryAgent.js';
@@ -187,6 +205,101 @@ const discoveryAgent = new BusinessDiscoveryAgent();
 const proposalAgent = new ProposalAgent();
 const builderAgent = new ProjectBuilderAgent();
 
+// Register agents with orchestrator
+agentOrchestrator.registerAgent('discovery', discoveryAgent);
+agentOrchestrator.registerAgent('proposal', proposalAgent);
+agentOrchestrator.registerAgent('builder', builderAgent);
+
+logger.info('AI agents registered with orchestrator', {
+  type: 'startup',
+  agents: ['discovery', 'proposal', 'builder']
+});
+
+// Register agents with health monitor
+const restartAgent = async (agentName) => {
+  logger.info('Restarting agent', { type: 'agent_health', agentName });
+  // Agent restart logic - toggle off and on
+  const agent = agentName === 'discovery' ? discoveryAgent : 
+                agentName === 'proposal' ? proposalAgent : builderAgent;
+  agent.toggle(); // Turn off
+  await new Promise(resolve => setTimeout(resolve, 1000));
+  agent.toggle(); // Turn back on
+};
+
+agentHealthMonitor.registerAgent('discovery', discoveryAgent, () => restartAgent('discovery'));
+agentHealthMonitor.registerAgent('proposal', proposalAgent, () => restartAgent('proposal'));
+agentHealthMonitor.registerAgent('builder', builderAgent, () => restartAgent('builder'));
+
+logger.info('AI agents registered with health monitor', {
+  type: 'startup',
+  agents: ['discovery', 'proposal', 'builder']
+});
+
+// Register fallback strategies for graceful degradation
+agentErrorHandler.registerFallbackStrategy('discovery', 'discoverBusinesses', async (error) => {
+  logger.warn('Using fallback for business discovery', { error: error.message });
+  return { businesses: [], fallback: true, message: 'Using cached or default data' };
+});
+
+agentErrorHandler.registerFallbackStrategy('proposal', 'generateProposal', async (error) => {
+  logger.warn('Using fallback for proposal generation', { error: error.message });
+  return { proposal: null, fallback: true, message: 'Proposal generation temporarily unavailable' };
+});
+
+agentErrorHandler.registerFallbackStrategy('builder', 'buildProject', async (error) => {
+  logger.warn('Using fallback for project building', { error: error.message });
+  return { project: null, fallback: true, message: 'Project building temporarily unavailable' };
+});
+
+logger.info('Fallback strategies registered', {
+  type: 'startup',
+  strategies: ['discovery', 'proposal', 'builder']
+});
+
+// Register agents with capacity manager
+agentCapacityManager.registerAgent('discovery', {
+  capacity: 10,
+  cpu: 15,
+  memory: 15,
+  network: 10,
+  autoScaling: true,
+  minCapacity: 5,
+  maxCapacity: 30
+});
+
+agentCapacityManager.registerAgent('proposal', {
+  capacity: 8,
+  cpu: 20,
+  memory: 20,
+  network: 10,
+  autoScaling: true,
+  minCapacity: 4,
+  maxCapacity: 25
+});
+
+agentCapacityManager.registerAgent('builder', {
+  capacity: 5,
+  cpu: 30,
+  memory: 30,
+  network: 15,
+  autoScaling: true,
+  minCapacity: 3,
+  maxCapacity: 15
+});
+
+logger.info('AI agents registered with capacity manager', {
+  type: 'startup',
+  agents: ['discovery', 'proposal', 'builder']
+});
+
+// Note: Notification delivery on user connection is handled by the websocket connection handler
+// The websocketServer doesn't expose an event emitter interface for this
+
+logger.info('Notification service initialized', {
+  type: 'startup',
+  config: notificationService.getConfig()
+});
+
 // WebSocket for real-time updates
 const clients = new Set();
 
@@ -267,6 +380,30 @@ app.use('/api/apm', authenticateToken, apmRoutes);
 
 // Error tracking routes (developer/admin only)
 app.use('/api/errors', authenticateToken, errorRoutes);
+
+// Backup routes (admin only)
+app.use('/api/backup', backupRoutes);
+
+// Migration routes (admin only)
+app.use('/api/migrations', migrationsRoutes);
+
+// Database health monitoring routes (developer/admin only)
+app.use('/api/database-health', databaseHealthRoutes);
+
+// Analytics routes (developer/admin only)
+app.use('/api/analytics', analyticsRoutes);
+
+// Orchestrator routes (developer/admin only)
+app.use('/api/orchestrator', orchestratorRoutes);
+
+// Agent health routes (developer/admin only)
+app.use('/api/agent-health', agentHealthRoutes);
+
+// Agent capacity routes (developer/admin only)
+app.use('/api/capacity', capacityRoutes);
+
+// Notification routes (authenticated)
+app.use('/api/notifications', notificationRoutes);
 
 // Enhanced search routes (public and authenticated)
 app.use('/api/enhanced-search', enhancedSearchRoutes);
@@ -733,6 +870,26 @@ async function startServer() {
     logger.info('Log aggregation service initialized', { 
       type: 'startup',
       features: ['structured_logging', 'correlation_ids', 'centralized_aggregation']
+    });
+    
+    // Start backup service
+    backupService.start();
+    logger.info('Backup service started', {
+      type: 'startup',
+      schedule: process.env.BACKUP_SCHEDULE || '0 2 * * *',
+      retentionDays: process.env.BACKUP_RETENTION_DAYS || '30'
+    });
+    
+    // Start agent health monitoring in production
+    if (process.env.NODE_ENV === 'production' || process.env.AGENT_HEALTH_MONITORING === 'true') {
+      agentHealthMonitor.startMonitoring();
+      logger.info('Agent health monitoring started', { type: 'startup' });
+    }
+
+    // Note: Capacity manager queue processing starts automatically when requests are queued
+    logger.info('Agent capacity manager initialized', { 
+      type: 'startup',
+      config: agentCapacityManager.capacityConfig
     });
     
     server.listen(PORT, HOST, () => {

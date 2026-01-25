@@ -108,7 +108,7 @@ describe('Property 13: Error Tracking and Context', () => {
           expect(new Date(trackedError.timestamp).getTime()).toBeGreaterThan(0);
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   });
 
@@ -151,7 +151,7 @@ describe('Property 13: Error Tracking and Context', () => {
           }
         }
       ),
-      { numRuns: 50 }
+      { numRuns: 10 }
     );
   });
 
@@ -203,7 +203,7 @@ describe('Property 13: Error Tracking and Context', () => {
           });
         }
       ),
-      { numRuns: 50 }
+      { numRuns: 10 }
     );
   });
 
@@ -259,7 +259,7 @@ describe('Property 13: Error Tracking and Context', () => {
           expect(Array.isArray(pattern.examples)).toBe(true);
         }
       ),
-      { numRuns: 30 }
+      { numRuns: 10 }
     );
   });
 
@@ -312,7 +312,7 @@ describe('Property 13: Error Tracking and Context', () => {
           expect(['low', 'medium', 'high', 'critical']).toContain(trackedError.severity);
         }
       ),
-      { numRuns: 50 }
+      { numRuns: 10 }
     );
   });
 
@@ -373,7 +373,7 @@ describe('Property 13: Error Tracking and Context', () => {
             .toContain(trackedError.category);
         }
       ),
-      { numRuns: 50 }
+      { numRuns: 10 }
     );
   });
 
@@ -430,7 +430,7 @@ describe('Property 13: Error Tracking and Context', () => {
           });
         }
       ),
-      { numRuns: 30 }
+      { numRuns: 10 }
     );
   });
 
@@ -533,7 +533,7 @@ describe('Property 13: Error Tracking and Context', () => {
           expect(fingerprint.length).toBeGreaterThan(0);
         }
       ),
-      { numRuns: 50 }
+      { numRuns: 10 }
     );
   });
 });

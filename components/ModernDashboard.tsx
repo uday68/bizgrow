@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { apiService } from '../services/apiService';
 import { websocketService } from '../services/websocketService';
+import ChatNotificationWidget from './ChatNotificationWidget';
 
 interface AgentStatus {
   isActive: boolean;
@@ -194,82 +195,109 @@ const ModernDashboard: React.FC = () => {
       </div>
 
       {/* Modern Navbar */}
-      <nav className="relative z-10 glass-nav p-4 m-4 rounded-2xl">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-gradient-to-r from-purple-500 to-blue-500 rounded-xl flex items-center justify-center">
-                <Bot className="h-6 w-6 text-white" />
-              </div>
-              <div>
-                <h1 className="text-xl font-bold text-white">BizGrow AI</h1>
-                <p className="text-xs text-white/60">Autonomous Business Engine</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center space-x-4">
-            {/* Connection Status */}
-            <div className="flex items-center space-x-2">
-              <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-400 animate-pulse' : 'bg-red-400'}`}></div>
-              <span className="text-white/80 text-sm">
-                {isConnected ? 'Live' : 'Offline'}
-              </span>
-            </div>
-
-            {/* Last Update */}
-            <div className="text-white/60 text-sm">
-              Updated: {lastUpdate.toLocaleTimeString()}
-            </div>
-
-            {/* Search */}
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-white/40" />
-              <input 
-                type="text" 
-                placeholder="Search agents, tasks..."
-                className="glass-input pl-10 pr-4 py-2 w-64 text-white placeholder-white/40 rounded-xl"
-              />
-            </div>
-
-            {/* User Profile */}
-            <div className="flex items-center space-x-3">
-              {/* User Info */}
-              <div className="flex items-center space-x-2 glass-button px-3 py-2 rounded-xl">
-                <div className="w-8 h-8 bg-gradient-to-r from-green-400 to-blue-500 rounded-lg flex items-center justify-center">
-                  <User className="h-4 w-4 text-white" />
+      <nav className="relative z-10 backdrop-blur-xl bg-white/5 border-b border-white/10 shadow-2xl">
+        <div className="max-w-7xl mx-auto px-6 py-4">
+          <div className="flex items-center justify-between">
+            {/* Left Section - Logo & Brand */}
+            <div className="flex items-center space-x-6">
+              <div className="flex items-center space-x-3 group cursor-pointer">
+                <div className="relative">
+                  <div className="absolute inset-0 bg-gradient-to-r from-purple-500 to-blue-500 rounded-2xl blur-lg opacity-50 group-hover:opacity-75 transition-opacity"></div>
+                  <div className="relative w-12 h-12 bg-gradient-to-br from-purple-500 via-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center shadow-lg transform group-hover:scale-105 transition-transform">
+                    <Bot className="h-7 w-7 text-white" />
+                  </div>
                 </div>
-                <div className="text-left">
-                  <p className="text-white text-sm font-medium">
+                <div>
+                  <h1 className="text-2xl font-bold bg-gradient-to-r from-white to-blue-200 bg-clip-text text-transparent">
+                    BizGrow AI
+                  </h1>
+                  <p className="text-xs text-white/50 font-medium tracking-wide">
+                    Autonomous Business Engine
+                  </p>
+                </div>
+              </div>
+
+              {/* Connection Status Badge */}
+              <div className="hidden md:flex items-center space-x-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10">
+                <div className="relative">
+                  <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-400' : 'bg-red-400'}`}></div>
+                  {isConnected && (
+                    <div className="absolute inset-0 w-2 h-2 rounded-full bg-green-400 animate-ping"></div>
+                  )}
+                </div>
+                <span className="text-white/70 text-xs font-medium">
+                  {isConnected ? 'Live' : 'Offline'}
+                </span>
+              </div>
+
+              {/* Last Update */}
+              <div className="hidden lg:flex items-center space-x-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10">
+                <Clock className="h-3.5 w-3.5 text-white/50" />
+                <span className="text-white/50 text-xs font-medium">
+                  {lastUpdate.toLocaleTimeString()}
+                </span>
+              </div>
+            </div>
+
+            {/* Right Section - Actions & User */}
+            <div className="flex items-center space-x-3">
+              {/* Search Bar */}
+              <div className="hidden md:block relative group">
+                <div className="absolute inset-0 bg-gradient-to-r from-purple-500/20 to-blue-500/20 rounded-xl blur-md opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                <div className="relative flex items-center">
+                  <Search className="absolute left-3 h-4 w-4 text-white/40 group-hover:text-white/60 transition-colors" />
+                  <input 
+                    type="text" 
+                    placeholder="Search agents, tasks..."
+                    className="w-64 pl-10 pr-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white text-sm placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-blue-400/50 focus:border-transparent transition-all"
+                  />
+                </div>
+              </div>
+
+              {/* Notifications */}
+              <button className="relative p-2.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all group">
+                <Bell className="h-5 w-5 text-white/70 group-hover:text-white transition-colors" />
+                <span className="absolute -top-1 -right-1 w-4 h-4 bg-gradient-to-r from-red-500 to-pink-500 rounded-full flex items-center justify-center text-[10px] font-bold text-white shadow-lg">
+                  3
+                </span>
+              </button>
+
+              {/* Settings */}
+              <button className="p-2.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all group">
+                <Settings className="h-5 w-5 text-white/70 group-hover:text-white group-hover:rotate-90 transition-all duration-300" />
+              </button>
+
+              {/* Divider */}
+              <div className="h-8 w-px bg-white/10"></div>
+
+              {/* User Profile */}
+              <div className="flex items-center space-x-3 px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all cursor-pointer group">
+                <div className="relative">
+                  <div className="absolute inset-0 bg-gradient-to-r from-green-400 to-blue-500 rounded-lg blur-md opacity-50 group-hover:opacity-75 transition-opacity"></div>
+                  <div className="relative w-9 h-9 bg-gradient-to-br from-green-400 to-blue-500 rounded-lg flex items-center justify-center shadow-lg">
+                    <User className="h-5 w-5 text-white" />
+                  </div>
+                </div>
+                <div className="hidden lg:block text-left">
+                  <p className="text-white text-sm font-semibold leading-tight">
                     {apiService.getUser()?.firstName || 'User'} {apiService.getUser()?.lastName || ''}
                   </p>
                   <div className="flex items-center space-x-1">
-                    <Shield className="h-3 w-3 text-white/60" />
-                    <p className="text-white/60 text-xs capitalize">
+                    <Shield className="h-3 w-3 text-blue-400" />
+                    <p className="text-blue-300 text-xs font-medium capitalize">
                       {apiService.getUser()?.role || 'user'}
                     </p>
                   </div>
                 </div>
               </div>
 
-              {/* Notifications */}
-              <button className="glass-button p-2 rounded-xl relative">
-                <Bell className="h-5 w-5 text-white" />
-                <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full"></span>
-              </button>
-
-              {/* Settings */}
-              <button className="glass-button p-2 rounded-xl">
-                <Settings className="h-5 w-5 text-white" />
-              </button>
-
-              {/* Logout */}
+              {/* Logout Button */}
               <button 
                 onClick={handleLogout}
-                className="glass-button p-2 rounded-xl hover:bg-red-500/20 transition-colors duration-200"
+                className="p-2.5 rounded-xl bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 transition-all group"
                 title="Sign Out"
               >
-                <LogOut className="h-5 w-5 text-white" />
+                <LogOut className="h-5 w-5 text-red-400 group-hover:text-red-300 transition-colors" />
               </button>
             </div>
           </div>
@@ -359,54 +387,57 @@ const ModernDashboard: React.FC = () => {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {metrics?.agents && Object.entries(metrics.agents).map(([agentId, agent]) => (
-              <div key={agentId} className="glass-card-inner p-6 hover:bg-white/5 transition-all duration-300">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center space-x-3">
-                    <div className={`w-3 h-3 rounded-full ${agent.isActive ? 'bg-green-400 animate-pulse' : 'bg-red-400'}`}></div>
-                    <h3 className="text-lg font-semibold text-white capitalize">{agentId} Agent</h3>
-                  </div>
-                  <button
-                    onClick={() => toggleAgent(agentId)}
-                    className={`glass-button p-2 rounded-lg ${agent.isActive ? 'text-red-400 hover:bg-red-500/20' : 'text-green-400 hover:bg-green-500/20'} transition-all duration-300`}
-                  >
-                    {agent.isActive ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-                  </button>
-                </div>
-
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center">
-                    <span className="text-white/60 text-sm">Status</span>
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                      agent.isActive ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
-                    }`}>
-                      {agent.isActive ? 'Active' : 'Inactive'}
-                    </span>
-                  </div>
-
-                  <div className="flex justify-between items-center">
-                    <span className="text-white/60 text-sm">Queue Length</span>
-                    <span className="text-white font-medium">{agent.queueLength || 0}</span>
-                  </div>
-
-                  <div className="flex justify-between items-center">
-                    <span className="text-white/60 text-sm">Processing</span>
-                    <span className={`px-2 py-1 rounded-full text-xs ${
-                      agent.isProcessing ? 'bg-blue-500/20 text-blue-400' : 'bg-gray-500/20 text-gray-400'
-                    }`}>
-                      {agent.isProcessing ? 'Yes' : 'No'}
-                    </span>
-                  </div>
-
-                  {agent.currentTask && (
-                    <div className="mt-3 p-3 bg-white/5 rounded-lg">
-                      <p className="text-white/60 text-xs mb-1">Current Task</p>
-                      <p className="text-white text-sm">{agent.currentTask}</p>
+            {metrics?.agents && Object.entries(metrics.agents).map(([agentId, agentData]) => {
+              const agent = agentData as AgentStatus;
+              return (
+                <div key={agentId} className="glass-card-inner p-6 hover:bg-white/5 transition-all duration-300">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center space-x-3">
+                      <div className={`w-3 h-3 rounded-full ${agent.isActive ? 'bg-green-400 animate-pulse' : 'bg-red-400'}`}></div>
+                      <h3 className="text-lg font-semibold text-white capitalize">{agentId} Agent</h3>
                     </div>
-                  )}
+                    <button
+                      onClick={() => toggleAgent(agentId)}
+                      className={`glass-button p-2 rounded-lg ${agent.isActive ? 'text-red-400 hover:bg-red-500/20' : 'text-green-400 hover:bg-green-500/20'} transition-all duration-300`}
+                    >
+                      {agent.isActive ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                    </button>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center">
+                      <span className="text-white/60 text-sm">Status</span>
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        agent.isActive ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                      }`}>
+                        {agent.isActive ? 'Active' : 'Inactive'}
+                      </span>
+                    </div>
+
+                    <div className="flex justify-between items-center">
+                      <span className="text-white/60 text-sm">Queue Length</span>
+                      <span className="text-white font-medium">{agent.queueLength || 0}</span>
+                    </div>
+
+                    <div className="flex justify-between items-center">
+                      <span className="text-white/60 text-sm">Processing</span>
+                      <span className={`px-2 py-1 rounded-full text-xs ${
+                        agent.isProcessing ? 'bg-blue-500/20 text-blue-400' : 'bg-gray-500/20 text-gray-400'
+                      }`}>
+                        {agent.isProcessing ? 'Yes' : 'No'}
+                      </span>
+                    </div>
+
+                    {agent.currentTask && (
+                      <div className="mt-3 p-3 bg-white/5 rounded-lg">
+                        <p className="text-white/60 text-xs mb-1">Current Task</p>
+                        <p className="text-white text-sm">{agent.currentTask}</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
@@ -506,6 +537,9 @@ const ModernDashboard: React.FC = () => {
           </div>
         </div>
       </div>
+      
+      {/* Chat Notification Widget */}
+      <ChatNotificationWidget />
     </div>
   );
 };

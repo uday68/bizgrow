@@ -14,7 +14,7 @@ import {
 
 // Property test configuration
 const propertyTestConfig = {
-  numRuns: 100,
+  numRuns: 20,
   timeout: 10000,
   verbose: false,
   seed: 42

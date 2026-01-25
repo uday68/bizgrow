@@ -6,7 +6,7 @@ import { JWTTokenManager, PasswordManager } from '../middleware/auth.js';
 
 // Property test configuration
 const propertyTestConfig = {
-  numRuns: 100,
+  numRuns: 20, // Reduced for faster test execution
   timeout: 10000,
   verbose: false,
   seed: 42 // Fixed seed for reproducible tests

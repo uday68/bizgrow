@@ -4,6 +4,7 @@ import cacheService from './cacheService.js';
 /**
  * Database Performance Monitoring Service
  * Tracks query performance, identifies slow queries, and provides optimization insights
+ * Includes health monitoring with automatic recovery and corruption detection
  */
 class DatabaseMonitor {
   constructor() {
@@ -12,10 +13,23 @@ class DatabaseMonitor {
     this.alertThresholds = {
       slowQueryMs: 100,
       errorRate: 0.05, // 5%
-      connectionPoolUtilization: 0.8 // 80%
+      connectionPoolUtilization: 0.8, // 80%
+      connectionFailureThreshold: 3, // Max consecutive failures before alert
+      corruptionCheckInterval: 3600000 // 1 hour in milliseconds
     };
     this.monitoringInterval = null;
+    this.healthCheckInterval = null;
+    this.corruptionCheckInterval = null;
     this.isMonitoring = false;
+    this.connectionFailures = 0;
+    this.lastHealthCheck = null;
+    this.lastCorruptionCheck = null;
+    this.healthStatus = {
+      isHealthy: true,
+      lastCheck: null,
+      consecutiveFailures: 0,
+      issues: []
+    };
   }
 
   /**
@@ -35,8 +49,20 @@ class DatabaseMonitor {
       await this.collectMetrics();
     }, 30000);
 
-    // Initial metrics collection
+    // Health check every 10 seconds
+    this.healthCheckInterval = setInterval(async () => {
+      await this.performHealthCheck();
+    }, 10000);
+
+    // Corruption check every hour
+    this.corruptionCheckInterval = setInterval(async () => {
+      await this.checkDataIntegrity();
+    }, this.alertThresholds.corruptionCheckInterval);
+
+    // Initial checks
     this.collectMetrics();
+    this.performHealthCheck();
+    this.checkDataIntegrity();
   }
 
   /**
@@ -46,6 +72,14 @@ class DatabaseMonitor {
     if (this.monitoringInterval) {
       clearInterval(this.monitoringInterval);
       this.monitoringInterval = null;
+    }
+    if (this.healthCheckInterval) {
+      clearInterval(this.healthCheckInterval);
+      this.healthCheckInterval = null;
+    }
+    if (this.corruptionCheckInterval) {
+      clearInterval(this.corruptionCheckInterval);
+      this.corruptionCheckInterval = null;
     }
     this.isMonitoring = false;
     console.log('🛑 Database monitoring stopped');
@@ -516,6 +550,7 @@ class DatabaseMonitor {
       generated_at: new Date().toISOString(),
       database_type: getDatabaseType(),
       monitoring_status: this.isMonitoring ? 'active' : 'inactive',
+      health_status: this.healthStatus,
       summary: {
         total_queries_tracked: this.queryStats.size,
         avg_query_time: this.calculateAverageQueryTime(),
@@ -539,6 +574,428 @@ class DatabaseMonitor {
         .sort((a, b) => parseFloat(b.avg_time) - parseFloat(a.avg_time))
         .slice(0, 10)
     };
+  }
+
+  /**
+   * Perform comprehensive health check
+   */
+  async performHealthCheck() {
+    const issues = [];
+    let isHealthy = true;
+
+    try {
+      const dbType = getDatabaseType();
+      const db = getDatabase();
+
+      // Test basic connectivity
+      try {
+        if (dbType === 'postgres') {
+          await db.query('SELECT 1');
+        } else {
+          await new Promise((resolve, reject) => {
+            db.get('SELECT 1', (err) => {
+              if (err) reject(err);
+              else resolve();
+            });
+          });
+        }
+        this.connectionFailures = 0;
+      } catch (error) {
+        this.connectionFailures++;
+        isHealthy = false;
+        issues.push({
+          type: 'connection_failure',
+          severity: 'critical',
+          message: `Database connection failed: ${error.message}`,
+          consecutiveFailures: this.connectionFailures
+        });
+
+        // Attempt automatic recovery
+        if (this.connectionFailures >= this.alertThresholds.connectionFailureThreshold) {
+          console.error('🚨 Critical: Multiple database connection failures detected');
+          await this.attemptConnectionRecovery();
+        }
+      }
+
+      // Check connection pool health (PostgreSQL only)
+      if (dbType === 'postgres') {
+        const poolStatus = db.getPoolStatus();
+        
+        if (poolStatus.status !== 'connected') {
+          isHealthy = false;
+          issues.push({
+            type: 'pool_disconnected',
+            severity: 'critical',
+            message: 'Database connection pool is disconnected',
+            poolStatus
+          });
+        }
+
+        // Check for connection pool exhaustion
+        const utilization = poolStatus.totalCount > 0 
+          ? (poolStatus.totalCount - poolStatus.idleCount) / poolStatus.totalCount 
+          : 0;
+
+        if (utilization > 0.9) {
+          issues.push({
+            type: 'pool_exhaustion',
+            severity: 'warning',
+            message: `Connection pool near exhaustion (${(utilization * 100).toFixed(1)}% utilized)`,
+            utilization
+          });
+        }
+      }
+
+      // Check for high error rates
+      const errorRate = parseFloat(this.calculateErrorRate());
+      if (errorRate > this.alertThresholds.errorRate) {
+        isHealthy = false;
+        issues.push({
+          type: 'high_error_rate',
+          severity: 'critical',
+          message: `Query error rate (${(errorRate * 100).toFixed(2)}%) exceeds threshold`,
+          errorRate
+        });
+      }
+
+      // Update health status
+      this.healthStatus = {
+        isHealthy,
+        lastCheck: new Date().toISOString(),
+        consecutiveFailures: isHealthy ? 0 : this.healthStatus.consecutiveFailures + 1,
+        issues
+      };
+
+      this.lastHealthCheck = new Date().toISOString();
+
+      // Cache health status
+      await cacheService.set('monitoring', 'database_health', this.healthStatus, {}, 30);
+
+      return this.healthStatus;
+    } catch (error) {
+      console.error('❌ Health check failed:', error);
+      this.healthStatus = {
+        isHealthy: false,
+        lastCheck: new Date().toISOString(),
+        consecutiveFailures: this.healthStatus.consecutiveFailures + 1,
+        issues: [{
+          type: 'health_check_error',
+          severity: 'critical',
+          message: `Health check failed: ${error.message}`
+        }]
+      };
+      return this.healthStatus;
+    }
+  }
+
+  /**
+   * Attempt automatic connection recovery
+   */
+  async attemptConnectionRecovery() {
+    console.log('🔄 Attempting automatic database connection recovery...');
+
+    try {
+      const dbType = getDatabaseType();
+      const db = getDatabase();
+
+      if (dbType === 'postgres') {
+        // Try to reconnect the pool
+        console.log('Attempting to reconnect PostgreSQL pool...');
+        await db.reconnect();
+        console.log('✅ PostgreSQL pool reconnected successfully');
+        
+        this.connectionFailures = 0;
+        this.healthStatus.isHealthy = true;
+        this.healthStatus.consecutiveFailures = 0;
+        
+        return { success: true, message: 'Connection recovered successfully' };
+      } else {
+        // SQLite recovery is simpler - just test the connection
+        await new Promise((resolve, reject) => {
+          db.get('SELECT 1', (err) => {
+            if (err) reject(err);
+            else resolve();
+          });
+        });
+        
+        this.connectionFailures = 0;
+        this.healthStatus.isHealthy = true;
+        this.healthStatus.consecutiveFailures = 0;
+        
+        console.log('✅ SQLite connection verified');
+        return { success: true, message: 'Connection verified successfully' };
+      }
+    } catch (error) {
+      console.error('❌ Connection recovery failed:', error);
+      return { success: false, message: error.message };
+    }
+  }
+
+  /**
+   * Check data integrity and detect corruption
+   */
+  async checkDataIntegrity() {
+    console.log('🔍 Performing data integrity check...');
+
+    try {
+      const dbType = getDatabaseType();
+      const db = getDatabase();
+      const issues = [];
+
+      if (dbType === 'postgres') {
+        // Check for table corruption
+        const corruptionCheck = await db.query(`
+          SELECT 
+            schemaname,
+            tablename,
+            pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename)) as size
+          FROM pg_tables
+          WHERE schemaname NOT IN ('pg_catalog', 'information_schema')
+        `);
+
+        // Check for index corruption
+        const indexCheck = await db.query(`
+          SELECT 
+            schemaname,
+            tablename,
+            indexname,
+            pg_size_pretty(pg_relation_size(indexrelid)) as size
+          FROM pg_indexes
+          WHERE schemaname NOT IN ('pg_catalog', 'information_schema')
+        `);
+
+        // Check for bloat
+        const bloatCheck = await db.query(`
+          SELECT 
+            schemaname,
+            tablename,
+            n_dead_tup as dead_tuples,
+            n_live_tup as live_tuples,
+            CASE 
+              WHEN n_live_tup > 0 
+              THEN (n_dead_tup::float / n_live_tup::float * 100)::numeric(5,2)
+              ELSE 0
+            END as bloat_percentage
+          FROM pg_stat_user_tables
+          WHERE n_dead_tup > 1000
+          ORDER BY n_dead_tup DESC
+          LIMIT 10
+        `);
+
+        // Alert on high bloat
+        for (const row of bloatCheck.rows) {
+          if (parseFloat(row.bloat_percentage) > 20) {
+            issues.push({
+              type: 'table_bloat',
+              severity: 'warning',
+              message: `Table ${row.tablename} has ${row.bloat_percentage}% bloat`,
+              table: row.tablename,
+              deadTuples: row.dead_tuples,
+              liveTuples: row.live_tuples,
+              bloatPercentage: row.bloat_percentage,
+              recommendation: 'Run VACUUM ANALYZE on this table'
+            });
+          }
+        }
+
+        console.log(`✅ Integrity check complete: ${corruptionCheck.rows.length} tables, ${indexCheck.rows.length} indexes checked`);
+      } else {
+        // SQLite integrity check
+        const integrityResult = await new Promise((resolve, reject) => {
+          db.get('PRAGMA integrity_check', (err, row) => {
+            if (err) reject(err);
+            else resolve(row);
+          });
+        });
+
+        if (integrityResult && integrityResult.integrity_check !== 'ok') {
+          issues.push({
+            type: 'database_corruption',
+            severity: 'critical',
+            message: 'SQLite integrity check failed',
+            result: integrityResult.integrity_check,
+            recommendation: 'Restore from backup immediately'
+          });
+          console.error('🚨 SQLite database corruption detected!');
+        } else {
+          console.log('✅ SQLite integrity check passed');
+        }
+      }
+
+      this.lastCorruptionCheck = new Date().toISOString();
+
+      // Store integrity check results
+      const integrityStatus = {
+        lastCheck: this.lastCorruptionCheck,
+        issues,
+        isHealthy: issues.filter(i => i.severity === 'critical').length === 0
+      };
+
+      await cacheService.set('monitoring', 'database_integrity', integrityStatus, {}, 3600);
+
+      // Alert on critical issues
+      for (const issue of issues) {
+        if (issue.severity === 'critical') {
+          console.error(`🚨 Data Integrity Alert: ${issue.message}`);
+        }
+      }
+
+      return integrityStatus;
+    } catch (error) {
+      console.error('❌ Integrity check failed:', error);
+      return {
+        lastCheck: new Date().toISOString(),
+        issues: [{
+          type: 'integrity_check_error',
+          severity: 'critical',
+          message: `Integrity check failed: ${error.message}`
+        }],
+        isHealthy: false
+      };
+    }
+  }
+
+  /**
+   * Perform database maintenance
+   */
+  async performMaintenance() {
+    console.log('🔧 Performing database maintenance...');
+
+    try {
+      const dbType = getDatabaseType();
+      const db = getDatabase();
+      const results = [];
+
+      if (dbType === 'postgres') {
+        // Run VACUUM ANALYZE on tables with high bloat
+        const bloatedTables = await db.query(`
+          SELECT tablename
+          FROM pg_stat_user_tables
+          WHERE n_dead_tup > 1000
+          ORDER BY n_dead_tup DESC
+          LIMIT 5
+        `);
+
+        for (const row of bloatedTables.rows) {
+          try {
+            await db.query(`VACUUM ANALYZE ${row.tablename}`);
+            results.push({
+              table: row.tablename,
+              action: 'VACUUM ANALYZE',
+              status: 'success'
+            });
+            console.log(`✅ Vacuumed table: ${row.tablename}`);
+          } catch (error) {
+            results.push({
+              table: row.tablename,
+              action: 'VACUUM ANALYZE',
+              status: 'failed',
+              error: error.message
+            });
+            console.error(`❌ Failed to vacuum table ${row.tablename}:`, error);
+          }
+        }
+
+        // Reindex tables with low index usage
+        const unusedIndexes = await db.query(`
+          SELECT 
+            schemaname,
+            tablename,
+            indexname
+          FROM pg_stat_user_indexes
+          WHERE idx_scan < 10
+          LIMIT 5
+        `);
+
+        for (const row of unusedIndexes.rows) {
+          try {
+            await db.query(`REINDEX INDEX ${row.indexname}`);
+            results.push({
+              index: row.indexname,
+              action: 'REINDEX',
+              status: 'success'
+            });
+            console.log(`✅ Reindexed: ${row.indexname}`);
+          } catch (error) {
+            results.push({
+              index: row.indexname,
+              action: 'REINDEX',
+              status: 'failed',
+              error: error.message
+            });
+          }
+        }
+      } else {
+        // SQLite maintenance
+        try {
+          await new Promise((resolve, reject) => {
+            db.run('VACUUM', (err) => {
+              if (err) reject(err);
+              else resolve();
+            });
+          });
+          results.push({
+            action: 'VACUUM',
+            status: 'success'
+          });
+          console.log('✅ SQLite VACUUM completed');
+        } catch (error) {
+          results.push({
+            action: 'VACUUM',
+            status: 'failed',
+            error: error.message
+          });
+        }
+
+        try {
+          await new Promise((resolve, reject) => {
+            db.run('ANALYZE', (err) => {
+              if (err) reject(err);
+              else resolve();
+            });
+          });
+          results.push({
+            action: 'ANALYZE',
+            status: 'success'
+          });
+          console.log('✅ SQLite ANALYZE completed');
+        } catch (error) {
+          results.push({
+            action: 'ANALYZE',
+            status: 'failed',
+            error: error.message
+          });
+        }
+      }
+
+      return {
+        timestamp: new Date().toISOString(),
+        database_type: dbType,
+        results,
+        success: results.every(r => r.status === 'success')
+      };
+    } catch (error) {
+      console.error('❌ Maintenance failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get health status
+   */
+  getHealthStatus() {
+    return this.healthStatus;
+  }
+
+  /**
+   * Get integrity status
+   */
+  async getIntegrityStatus() {
+    const cached = await cacheService.get('monitoring', 'database_integrity');
+    if (cached) return cached;
+
+    // If no cached status, perform check
+    return await this.checkDataIntegrity();
   }
 }
 

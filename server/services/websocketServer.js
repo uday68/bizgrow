@@ -129,6 +129,11 @@ class WebSocketServer {
       isAuthenticated: socket.isAuthenticated
     });
 
+    // Emit user_connected event for notification delivery
+    if (socket.isAuthenticated) {
+      this.emit('user_connected', socket.userId);
+    }
+
     // Handle chat events
     this.setupChatHandlers(socket);
 

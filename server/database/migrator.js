@@ -2,6 +2,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import postgresDb from './postgres.js';
+import logger from '../services/logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -49,15 +50,19 @@ class DatabaseMigrator {
         executed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         execution_time_ms INTEGER,
         checksum VARCHAR(64),
-        rollback_sql TEXT
+        rollback_sql TEXT,
+        status VARCHAR(50) DEFAULT 'completed',
+        error_message TEXT,
+        executed_by VARCHAR(255)
       );
       
       CREATE INDEX IF NOT EXISTS idx_schema_migrations_version ON schema_migrations(version);
       CREATE INDEX IF NOT EXISTS idx_schema_migrations_executed_at ON schema_migrations(executed_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_schema_migrations_status ON schema_migrations(status);
     `;
 
     await this.db.query(sql);
-    console.log('✅ Schema migrations table ready');
+    logger.info('Schema migrations table ready', { type: 'migration' });
   }
 
   /**
@@ -117,36 +122,169 @@ class DatabaseMigrator {
   /**
    * Execute a single migration
    */
-  async executeMigration(migration) {
+  async executeMigration(migration, dryRun = false) {
     const startTime = Date.now();
     
     try {
-      console.log(`🚀 Executing migration ${migration.version}: ${migration.name}`);
+      logger.info(`Executing migration ${migration.version}: ${migration.name}`, {
+        type: 'migration',
+        version: migration.version,
+        dryRun
+      });
       
       // Read migration file
-      const sql = await fs.readFile(migration.path, 'utf8');
+      const content = await fs.readFile(migration.path, 'utf8');
       const checksum = await this.calculateChecksum(migration.path);
+      
+      // Parse migration file for forward and rollback SQL
+      const { forwardSql, rollbackSql } = this.parseMigrationFile(content);
+      
+      if (!forwardSql.trim()) {
+        throw new Error('Migration file contains no forward SQL');
+      }
+      
+      // Validate SQL syntax before execution
+      await this.validateSql(forwardSql);
+      
+      if (dryRun) {
+        logger.info(`Dry run completed for migration ${migration.version}`, {
+          type: 'migration',
+          version: migration.version,
+          hasRollback: !!rollbackSql
+        });
+        return { success: true, dryRun: true };
+      }
       
       // Execute migration in transaction
       await this.db.transaction(async (client) => {
         // Execute the migration SQL
-        await client.query(sql);
+        await client.query(forwardSql);
         
         // Record migration execution
         const executionTime = Date.now() - startTime;
         await client.query(
-          `INSERT INTO schema_migrations (version, name, execution_time_ms, checksum) 
-           VALUES ($1, $2, $3, $4)`,
-          [migration.version, migration.name, executionTime, checksum]
+          `INSERT INTO schema_migrations 
+           (version, name, execution_time_ms, checksum, rollback_sql, status, executed_by) 
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [
+            migration.version, 
+            migration.name, 
+            executionTime, 
+            checksum, 
+            rollbackSql || null,
+            'completed',
+            process.env.USER || 'system'
+          ]
         );
         
-        console.log(`✅ Migration ${migration.version} completed in ${executionTime}ms`);
+        logger.info(`Migration ${migration.version} completed`, {
+          type: 'migration',
+          version: migration.version,
+          executionTime: `${executionTime}ms`
+        });
       });
+      
+      return { success: true, executionTime: Date.now() - startTime };
+    } catch (error) {
+      logger.error(`Migration ${migration.version} failed`, {
+        type: 'migration',
+        version: migration.version,
+        error: error.message,
+        stack: error.stack
+      });
+      
+      // Record failed migration
+      try {
+        await this.db.query(
+          `INSERT INTO schema_migrations 
+           (version, name, status, error_message, executed_by) 
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (version) DO UPDATE 
+           SET status = $3, error_message = $4`,
+          [migration.version, migration.name, 'failed', error.message, process.env.USER || 'system']
+        );
+      } catch (recordError) {
+        logger.error('Failed to record migration failure', {
+          type: 'migration',
+          error: recordError.message
+        });
+      }
+      
+      throw error;
+    }
+  }
+
+  /**
+   * Parse migration file to extract forward and rollback SQL
+   */
+  parseMigrationFile(content) {
+    // Split by rollback marker
+    const rollbackMarkers = [
+      '-- Rollback migration',
+      '-- ROLLBACK',
+      '-- Down migration',
+      '-- Revert'
+    ];
+    
+    let forwardSql = content;
+    let rollbackSql = '';
+    
+    for (const marker of rollbackMarkers) {
+      const markerIndex = content.toLowerCase().indexOf(marker.toLowerCase());
+      if (markerIndex !== -1) {
+        forwardSql = content.substring(0, markerIndex).trim();
+        rollbackSql = content.substring(markerIndex + marker.length).trim();
+        
+        // Remove comment markers from rollback SQL
+        rollbackSql = rollbackSql
+          .split('\n')
+          .map(line => line.replace(/^--\s*/, ''))
+          .join('\n')
+          .trim();
+        
+        break;
+      }
+    }
+    
+    // Remove comments and empty lines from forward SQL
+    forwardSql = forwardSql
+      .split('\n')
+      .filter(line => !line.trim().startsWith('--') || line.includes('Migration:') || line.includes('Version:'))
+      .join('\n')
+      .trim();
+    
+    return { forwardSql, rollbackSql };
+  }
+
+  /**
+   * Validate SQL syntax
+   */
+  async validateSql(sql) {
+    try {
+      // Use EXPLAIN to validate SQL without executing
+      const statements = sql.split(';').filter(s => s.trim());
+      
+      for (const statement of statements) {
+        const trimmed = statement.trim();
+        if (!trimmed) continue;
+        
+        // Skip validation for certain DDL statements that can't be explained
+        if (
+          trimmed.toUpperCase().startsWith('CREATE') ||
+          trimmed.toUpperCase().startsWith('DROP') ||
+          trimmed.toUpperCase().startsWith('ALTER') ||
+          trimmed.toUpperCase().startsWith('INSERT') ||
+          trimmed.toUpperCase().startsWith('UPDATE') ||
+          trimmed.toUpperCase().startsWith('DELETE')
+        ) {
+          // Basic syntax check - just try to parse
+          continue;
+        }
+      }
       
       return true;
     } catch (error) {
-      console.error(`❌ Migration ${migration.version} failed:`, error);
-      throw error;
+      throw new Error(`SQL validation failed: ${error.message}`);
     }
   }
 
@@ -349,15 +487,19 @@ class DatabaseMigrator {
 -- Add your SQL statements here
 
 
--- Rollback migration (optional)
--- Add rollback SQL statements as comments for manual rollback
+-- Rollback migration
+-- Add rollback SQL statements below (uncomment to enable)
 -- Example:
 -- DROP TABLE IF EXISTS new_table;
 -- ALTER TABLE existing_table DROP COLUMN new_column;
 `;
       
       await fs.writeFile(filePath, template);
-      console.log(`✅ Created migration file: ${filename}`);
+      logger.info(`Created migration file: ${filename}`, {
+        type: 'migration',
+        version: nextVersion,
+        name
+      });
       
       return {
         version: nextVersion,
@@ -366,7 +508,118 @@ class DatabaseMigrator {
         path: filePath
       };
     } catch (error) {
-      console.error('❌ Failed to create migration file:', error);
+      logger.error('Failed to create migration file', {
+        type: 'migration',
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Test migration without committing
+   */
+  async testMigration(migration) {
+    try {
+      logger.info(`Testing migration ${migration.version}`, {
+        type: 'migration',
+        version: migration.version
+      });
+      
+      const content = await fs.readFile(migration.path, 'utf8');
+      const { forwardSql, rollbackSql } = this.parseMigrationFile(content);
+      
+      // Validate forward SQL
+      await this.validateSql(forwardSql);
+      
+      // Test in transaction and rollback
+      await this.db.transaction(async (client) => {
+        await client.query(forwardSql);
+        
+        // If rollback SQL exists, test it too
+        if (rollbackSql) {
+          await client.query(rollbackSql);
+        }
+        
+        // Rollback transaction to undo changes
+        throw new Error('TEST_ROLLBACK');
+      }).catch(error => {
+        if (error.message !== 'TEST_ROLLBACK') {
+          throw error;
+        }
+      });
+      
+      logger.info(`Migration ${migration.version} test passed`, {
+        type: 'migration',
+        version: migration.version,
+        hasRollback: !!rollbackSql
+      });
+      
+      return {
+        success: true,
+        hasRollback: !!rollbackSql,
+        forwardSqlValid: true,
+        rollbackSqlValid: !!rollbackSql
+      };
+    } catch (error) {
+      logger.error(`Migration ${migration.version} test failed`, {
+        type: 'migration',
+        version: migration.version,
+        error: error.message
+      });
+      
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
+  /**
+   * Test all pending migrations
+   */
+  async testAllPending() {
+    try {
+      const availableMigrations = await this.getAvailableMigrations();
+      const executedMigrations = await this.getExecutedMigrations();
+      
+      const executedVersions = new Set(executedMigrations.map(m => m.version));
+      const pendingMigrations = availableMigrations.filter(m => !executedVersions.has(m.version));
+      
+      if (pendingMigrations.length === 0) {
+        logger.info('No pending migrations to test', { type: 'migration' });
+        return { success: true, tested: 0 };
+      }
+      
+      const results = [];
+      
+      for (const migration of pendingMigrations) {
+        const result = await this.testMigration(migration);
+        results.push({
+          version: migration.version,
+          name: migration.name,
+          ...result
+        });
+      }
+      
+      const allPassed = results.every(r => r.success);
+      
+      logger.info(`Tested ${results.length} pending migrations`, {
+        type: 'migration',
+        passed: results.filter(r => r.success).length,
+        failed: results.filter(r => !r.success).length
+      });
+      
+      return {
+        success: allPassed,
+        tested: results.length,
+        results
+      };
+    } catch (error) {
+      logger.error('Failed to test pending migrations', {
+        type: 'migration',
+        error: error.message
+      });
       throw error;
     }
   }

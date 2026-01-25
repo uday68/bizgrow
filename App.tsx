@@ -15,17 +15,29 @@ import {
   Bell,
   ChevronDown,
   Menu,
-  X
+  X,
+  Database,
+  Users,
+  HardDrive,
+  GitBranch
 } from 'lucide-react';
 import LeadSearch from './components/LeadSearch';
 import EnhancedLeadSearch from './components/EnhancedLeadSearch';
-import ProposalsPage from './components/ProposalsPage';
 import ModernDashboard from './components/ModernDashboard';
 import AdminPanel from './components/AdminPanel';
 import APMDashboard from './components/APMDashboard';
 import ErrorDashboard from './components/ErrorDashboard';
 import ChatInterface from './components/ChatInterface';
+import CustomerChatPage from './components/CustomerChatPage';
+import AgentChatDashboard from './components/AgentChatDashboard';
+import ProposalsPage from './components/ProposalsPage';
 import Settings from './components/Settings';
+import TenantManagementPage from './components/TenantManagementPage';
+import DatabaseHealthPage from './components/DatabaseHealthPage';
+import BackupManagementPage from './components/BackupManagementPage';
+import MigrationManagementPage from './components/MigrationManagementPage';
+import AgentHealthDashboard from './components/AgentHealthDashboard';
+import NotificationCenter from './components/NotificationCenter';
 
 import ProtectedRoute from './components/ProtectedRoute';
 import LoginForm from './components/LoginForm';
@@ -46,15 +58,22 @@ const Sidebar = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) 
 
   const navItems = [
     { path: '/modern', icon: LayoutDashboard, label: 'Dashboard', color: 'indigo' },
-    { path: '/search', icon: Search, label: 'Lead Finder', color: 'green' },
-    { path: '/enhanced-search', icon: Search, label: 'Enhanced Search', color: 'emerald' },
+    { path: '/enhanced-search', icon: Search, label: 'Lead Search', color: 'emerald' },
     { path: '/proposals', icon: FileText, label: 'Proposals', color: 'yellow' },
-    { path: '/chat', icon: MessageSquare, label: 'AI Chat', color: 'blue' },
   ];
 
   const monitoringItems = [
+    { path: '/agent-chat', icon: MessageSquare, label: 'Agent Chat', color: 'cyan', roles: ['admin', 'developer'] },
+    { path: '/agent-health', icon: Activity, label: 'Agent Health', color: 'green', roles: ['admin', 'developer'] },
     { path: '/apm', icon: Activity, label: 'Performance', color: 'purple', roles: ['admin', 'developer'] },
-    { path: '/errors', icon: AlertCircle, label: 'Error Tracking', color: 'red', roles: ['admin', 'developer'] },
+    { path: '/errors', icon: AlertCircle, label: 'Errors', color: 'red', roles: ['admin', 'developer'] },
+    { path: '/database-health', icon: Database, label: 'Database', color: 'blue', roles: ['admin', 'developer'] },
+  ];
+
+  const systemItems = [
+    { path: '/tenants', icon: Users, label: 'Tenants', color: 'indigo', roles: ['admin'] },
+    { path: '/backups', icon: HardDrive, label: 'Backups', color: 'teal', roles: ['admin'] },
+    { path: '/migrations', icon: GitBranch, label: 'Migrations', color: 'orange', roles: ['admin'] },
   ];
 
   const adminItems = [
@@ -222,9 +241,60 @@ const Sidebar = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) 
             </>
           )}
 
-          {/* Admin Section */}
+          {/* System Management Section */}
+          {apiService.hasRole('admin') && (
+            <>
+              <div className="mt-6 mb-2">
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider px-3 mb-2">System Management</p>
+              </div>
+              
+              {systemItems.map((item) => {
+                if (item.roles && !item.roles.some(role => apiService.hasRole(role))) return null;
+                return (
+                  <Link 
+                    key={item.path}
+                    to={item.path} 
+                    onClick={onClose}
+                    className={`
+                      flex items-center gap-3 px-3 py-3 rounded-xl transition-all group relative overflow-hidden
+                      ${isActive(item.path) 
+                        ? `bg-${item.color}-500/20 border border-${item.color}-500/30` 
+                        : 'hover:bg-slate-800/50'
+                      }
+                    `}
+                  >
+                    <div className={`absolute inset-0 bg-gradient-to-r from-${item.color}-500/10 to-${item.color}-500/10 opacity-0 group-hover:opacity-100 transition-opacity`}></div>
+                    <div className={`
+                      relative flex items-center justify-center w-9 h-9 rounded-lg 
+                      ${isActive(item.path) 
+                        ? `bg-${item.color}-500/30` 
+                        : `bg-slate-800/50 group-hover:bg-${item.color}-500/20`
+                      }
+                      transition-colors
+                    `}>
+                      <item.icon size={18} className={`
+                        ${isActive(item.path) 
+                          ? `text-${item.color}-400` 
+                          : `text-slate-400 group-hover:text-${item.color}-400`
+                        }
+                        transition-colors
+                      `} />
+                    </div>
+                    <span className={`
+                      relative font-medium text-sm transition-colors
+                      ${isActive(item.path) ? 'text-white' : 'text-slate-300 group-hover:text-white'}
+                    `}>
+                      {item.label}
+                    </span>
+                  </Link>
+                );
+              })}
+            </>
+          )}
+
+          {/* Settings Section */}
           <div className="mt-6 mb-2">
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider px-3 mb-2">System</p>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider px-3 mb-2">Settings</p>
           </div>
           
           {adminItems.map((item) => {
@@ -317,63 +387,122 @@ const App: React.FC = () => {
 
   return (
     <HashRouter>
-      <ProtectedRoute>
-        <div className="flex bg-slate-50 min-h-screen">
-          <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-          
-          {/* Mobile Menu Button */}
-          <button
-            onClick={() => setSidebarOpen(true)}
-            className="fixed top-4 left-4 z-30 lg:hidden p-2 rounded-lg bg-slate-900 text-white shadow-lg"
-          >
-            <Menu size={24} />
-          </button>
+      <Routes>
+        {/* Public Routes */}
+        <Route path="/chat" element={<CustomerChatPage />} />
+        <Route path="/login" element={<LoginForm />} />
+        
+        {/* Protected Routes */}
+        <Route path="/*" element={
+          <ProtectedRoute>
+            <div className="flex bg-slate-50 min-h-screen">
+              <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+              
+              {/* Mobile Menu Button */}
+              <div className="fixed top-4 left-4 right-4 z-30 lg:left-auto lg:right-8 flex items-center justify-between lg:justify-end gap-4">
+                <button
+                  onClick={() => setSidebarOpen(true)}
+                  className="lg:hidden p-2 rounded-lg bg-slate-900 text-white shadow-lg"
+                >
+                  <Menu size={24} />
+                </button>
+                
+                <NotificationCenter />
+              </div>
 
-          <main className="flex-1 lg:ml-72 p-4 lg:p-8">
-            <Routes>
-              <Route path="/" element={<ModernDashboard />} />
-              <Route 
-                path="/modern" 
-                element={
-                  <ProtectedRoute requiredRole="developer">
-                    <ModernDashboard />
-                  </ProtectedRoute>
-                } 
-              />
-              <Route 
-                path="/admin" 
-                element={
-                  <ProtectedRoute requiredRole="admin">
-                    <AdminPanel />
-                  </ProtectedRoute>
-                } 
-              />
-              <Route 
-                path="/apm" 
-                element={
-                  <ProtectedRoute requiredRole="developer">
-                    <APMDashboard />
-                  </ProtectedRoute>
-                } 
-              />
-              <Route 
-                path="/errors" 
-                element={
-                  <ProtectedRoute requiredRole="developer">
-                    <ErrorDashboard />
-                  </ProtectedRoute>
-                } 
-              />
-              <Route path="/search" element={<LeadSearch onSaveLead={handleSaveLead} savedLeadIds={savedLeads.map(l => l.id)} />} />
-              <Route path="/enhanced-search" element={<EnhancedLeadSearch onSaveLead={handleSaveLead} savedLeadIds={savedLeads.map(l => l.id)} />} />
-              <Route path="/proposals" element={<ProposalsPage />} />
-              <Route path="/chat" element={<ChatInterface />} />
-              <Route path="/settings" element={<Settings />} />
-              <Route path="/login" element={<LoginForm />} />
-            </Routes>
-          </main>
-        </div>
-      </ProtectedRoute>
+              <main className="flex-1 lg:ml-72 p-4 lg:p-8 pt-20 lg:pt-8">
+                <Routes>
+                  <Route path="/" element={<ModernDashboard />} />
+                  <Route 
+                    path="/modern" 
+                    element={
+                      <ProtectedRoute requiredRole="developer">
+                        <ModernDashboard />
+                      </ProtectedRoute>
+                    } 
+                  />
+                  <Route 
+                    path="/admin" 
+                    element={
+                      <ProtectedRoute requiredRole="admin">
+                        <AdminPanel />
+                      </ProtectedRoute>
+                    } 
+                  />
+                  <Route 
+                    path="/apm" 
+                    element={
+                      <ProtectedRoute requiredRole="developer">
+                        <APMDashboard />
+                      </ProtectedRoute>
+                    } 
+                  />
+                  <Route 
+                    path="/errors" 
+                    element={
+                      <ProtectedRoute requiredRole="developer">
+                        <ErrorDashboard />
+                      </ProtectedRoute>
+                    } 
+                  />
+                  <Route 
+                    path="/agent-chat" 
+                    element={
+                      <ProtectedRoute requiredRole="developer">
+                        <AgentChatDashboard />
+                      </ProtectedRoute>
+                    } 
+                  />
+                  <Route 
+                    path="/agent-health" 
+                    element={
+                      <ProtectedRoute requiredRole="developer">
+                        <AgentHealthDashboard />
+                      </ProtectedRoute>
+                    } 
+                  />
+                  <Route 
+                    path="/database-health" 
+                    element={
+                      <ProtectedRoute requiredRole="developer">
+                        <DatabaseHealthPage />
+                      </ProtectedRoute>
+                    } 
+                  />
+                  <Route 
+                    path="/tenants" 
+                    element={
+                      <ProtectedRoute requiredRole="admin">
+                        <TenantManagementPage />
+                      </ProtectedRoute>
+                    } 
+                  />
+                  <Route 
+                    path="/backups" 
+                    element={
+                      <ProtectedRoute requiredRole="admin">
+                        <BackupManagementPage />
+                      </ProtectedRoute>
+                    } 
+                  />
+                  <Route 
+                    path="/migrations" 
+                    element={
+                      <ProtectedRoute requiredRole="admin">
+                        <MigrationManagementPage />
+                      </ProtectedRoute>
+                    } 
+                  />
+                  <Route path="/search" element={<LeadSearch onSaveLead={handleSaveLead} savedLeadIds={savedLeads.map(l => l.id)} />} />
+                  <Route path="/enhanced-search" element={<EnhancedLeadSearch onSaveLead={handleSaveLead} savedLeadIds={savedLeads.map(l => l.id)} />} />
+                  <Route path="/proposals" element={<ProposalsPage />} />
+                  <Route path="/settings" element={<Settings />} />
+                </Routes>
+              </main>
+            </div>
+          </ProtectedRoute>
+        } />
+      </Routes>
     </HashRouter>
   );
 };
