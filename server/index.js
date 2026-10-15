@@ -64,6 +64,10 @@ import orchestratorRoutes from './routes/orchestrator.js';
 import agentHealthRoutes from './routes/agentHealth.js';
 import capacityRoutes from './routes/capacity.js';
 import notificationRoutes from './routes/notifications.js';
+import aiRoutes from './routes/ai.js';
+import tenantsRoutes from './routes/tenants.js';
+import tenantAnalyticsRoutes from './routes/tenantAnalytics.js';
+import tenantIsolation from './middleware/tenantIsolation.js';
 
 // Import Cache Services
 import cacheService from './services/cacheService.js';
@@ -408,11 +412,18 @@ app.use('/api/notifications', notificationRoutes);
 // Enhanced search routes (public and authenticated)
 app.use('/api/enhanced-search', enhancedSearchRoutes);
 
-// Businesses routes (authenticated)
-app.use('/api/businesses', authenticateToken, businessesRoutes);
+// Server-side AI integration routes (authenticated or rate-limited public access)
+app.use('/api/ai', aiRoutes);
 
-// Proposals routes (authenticated)
-app.use('/api/proposals', authenticateToken, proposalsRoutes);
+// Multi-tenant management routes (authenticated)
+app.use('/api/tenants', authenticateToken, tenantsRoutes);
+app.use('/api/tenant-analytics', authenticateToken, tenantAnalyticsRoutes);
+
+// Businesses routes (authenticated and tenant-isolated)
+app.use('/api/businesses', authenticateToken, tenantIsolation, businessesRoutes);
+
+// Proposals routes (authenticated and tenant-isolated)
+app.use('/api/proposals', authenticateToken, tenantIsolation, proposalsRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

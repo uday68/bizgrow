@@ -5,13 +5,18 @@ import logger from '../services/logger.js';
 
 const router = express.Router();
 
+const getReqTenantId = (req) => {
+  return req.tenantId || req.user?.tenantId || 'default';
+};
+
 /**
  * @route   GET /api/businesses
- * @desc    Get all businesses with optional filters
+ * @desc    Get all businesses with optional filters, scoped to authenticated tenant
  * @access  Private
  */
 router.get('/', authenticateToken, async (req, res) => {
   try {
+    const tenantId = getReqTenantId(req);
     const { 
       region, 
       industry, 
@@ -21,8 +26,8 @@ router.get('/', authenticateToken, async (req, res) => {
       offset = 0 
     } = req.query;
 
-    let query = 'SELECT * FROM businesses WHERE 1=1';
-    const params = [];
+    let query = 'SELECT * FROM businesses WHERE tenant_id = ?';
+    const params = [tenantId];
 
     if (region) {
       query += ' AND region = ?';
@@ -50,8 +55,8 @@ router.get('/', authenticateToken, async (req, res) => {
     const businesses = await cachedDb.all(query, params);
 
     logger.info('Businesses fetched successfully', {
+      tenantId,
       count: businesses.length,
-      filters: { region, industry, status, minScore },
       userId: req.user.id
     });
 
@@ -74,16 +79,17 @@ router.get('/', authenticateToken, async (req, res) => {
 
 /**
  * @route   GET /api/businesses/:id
- * @desc    Get a single business by ID
+ * @desc    Get a single business by ID (tenant-scoped)
  * @access  Private
  */
 router.get('/:id', authenticateToken, async (req, res) => {
   try {
+    const tenantId = getReqTenantId(req);
     const { id } = req.params;
 
     const business = await cachedDb.get(
-      'SELECT * FROM businesses WHERE id = ?',
-      [id]
+      'SELECT * FROM businesses WHERE id = ? AND tenant_id = ?',
+      [id, tenantId]
     );
 
     if (!business) {
@@ -93,22 +99,17 @@ router.get('/:id', authenticateToken, async (req, res) => {
       });
     }
 
-    // Get related proposals
+    // Get related proposals (tenant-scoped)
     const proposals = await cachedDb.all(
-      'SELECT id, status, created_at, sent_at FROM proposals WHERE business_id = ?',
-      [id]
+      'SELECT id, status, created_at, sent_at FROM proposals WHERE business_id = ? AND tenant_id = ?',
+      [id, tenantId]
     );
 
-    // Get related projects
+    // Get related projects (tenant-scoped)
     const projects = await cachedDb.all(
-      'SELECT id, project_type, status, created_at FROM projects WHERE business_id = ?',
-      [id]
+      'SELECT id, project_type, status, created_at FROM projects WHERE business_id = ? AND tenant_id = ?',
+      [id, tenantId]
     );
-
-    logger.info('Business fetched successfully', {
-      businessId: id,
-      userId: req.user.id
-    });
 
     res.json({
       success: true,
@@ -130,11 +131,12 @@ router.get('/:id', authenticateToken, async (req, res) => {
 
 /**
  * @route   POST /api/businesses
- * @desc    Create a new business
+ * @desc    Create a new business within tenant boundary
  * @access  Private
  */
 router.post('/', authenticateToken, async (req, res) => {
   try {
+    const tenantId = getReqTenantId(req);
     const {
       name,
       address,
@@ -158,30 +160,24 @@ router.post('/', authenticateToken, async (req, res) => {
       });
     }
 
-    const result = await cachedDb.run(`
+    const businessId = `biz_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+
+    await cachedDb.run(`
       INSERT INTO businesses (
-        name, address, phone, website, email, rating, review_count,
+        id, tenant_id, name, address, phone, website, email, rating, review_count,
         maps_url, region, industry, digital_presence_score, 
         opportunity_score, status, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
     `, [
-      name, address, phone, website, email, rating, review_count,
+      businessId, tenantId, name, address, phone, website, email, rating, review_count,
       maps_url, region, industry, digital_presence_score || 0,
       opportunity_score || 0, status
     ]);
 
-    const businessId = result.lastID;
-
     const business = await cachedDb.get(
-      'SELECT * FROM businesses WHERE id = ?',
-      [businessId]
+      'SELECT * FROM businesses WHERE id = ? AND tenant_id = ?',
+      [businessId, tenantId]
     );
-
-    logger.info('Business created successfully', {
-      businessId,
-      name,
-      userId: req.user.id
-    });
 
     res.status(201).json({
       success: true,
@@ -200,18 +196,18 @@ router.post('/', authenticateToken, async (req, res) => {
 
 /**
  * @route   PUT /api/businesses/:id
- * @desc    Update a business
+ * @desc    Update a business (tenant-scoped)
  * @access  Private
  */
 router.put('/:id', authenticateToken, async (req, res) => {
   try {
+    const tenantId = getReqTenantId(req);
     const { id } = req.params;
     const updates = req.body;
 
-    // Check if business exists
     const business = await cachedDb.get(
-      'SELECT id FROM businesses WHERE id = ?',
-      [id]
+      'SELECT id FROM businesses WHERE id = ? AND tenant_id = ?',
+      [id, tenantId]
     );
 
     if (!business) {
@@ -221,7 +217,6 @@ router.put('/:id', authenticateToken, async (req, res) => {
       });
     }
 
-    // Build update query dynamically
     const allowedFields = [
       'name', 'address', 'phone', 'website', 'email', 'rating', 
       'review_count', 'maps_url', 'region', 'industry', 
@@ -245,24 +240,19 @@ router.put('/:id', authenticateToken, async (req, res) => {
       });
     }
 
-    updateFields.push('updated_at = datetime(\'now\')');
-    values.push(id);
+    updateFields.push('updated_at = CURRENT_TIMESTAMP');
+    values.push(id, tenantId);
 
     await cachedDb.run(`
       UPDATE businesses 
       SET ${updateFields.join(', ')}
-      WHERE id = ?
+      WHERE id = ? AND tenant_id = ?
     `, values);
 
     const updatedBusiness = await cachedDb.get(
-      'SELECT * FROM businesses WHERE id = ?',
-      [id]
+      'SELECT * FROM businesses WHERE id = ? AND tenant_id = ?',
+      [id, tenantId]
     );
-
-    logger.info('Business updated successfully', {
-      businessId: id,
-      userId: req.user.id
-    });
 
     res.json({
       success: true,
@@ -281,25 +271,17 @@ router.put('/:id', authenticateToken, async (req, res) => {
 
 /**
  * @route   DELETE /api/businesses/:id
- * @desc    Delete a business
- * @access  Private (Admin only)
+ * @desc    Delete a business (tenant-scoped)
+ * @access  Private
  */
 router.delete('/:id', authenticateToken, async (req, res) => {
   try {
+    const tenantId = getReqTenantId(req);
     const { id } = req.params;
 
-    // Check if user is admin
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ 
-        success: false, 
-        message: 'Unauthorized - Admin access required' 
-      });
-    }
-
-    // Check if business exists
     const business = await cachedDb.get(
-      'SELECT id FROM businesses WHERE id = ?',
-      [id]
+      'SELECT id FROM businesses WHERE id = ? AND tenant_id = ?',
+      [id, tenantId]
     );
 
     if (!business) {
@@ -309,12 +291,7 @@ router.delete('/:id', authenticateToken, async (req, res) => {
       });
     }
 
-    await cachedDb.run('DELETE FROM businesses WHERE id = ?', [id]);
-
-    logger.info('Business deleted successfully', {
-      businessId: id,
-      userId: req.user.id
-    });
+    await cachedDb.run('DELETE FROM businesses WHERE id = ? AND tenant_id = ?', [id, tenantId]);
 
     res.json({
       success: true,
@@ -332,11 +309,12 @@ router.delete('/:id', authenticateToken, async (req, res) => {
 
 /**
  * @route   GET /api/businesses/stats/summary
- * @desc    Get business statistics summary
+ * @desc    Get business statistics summary (tenant-scoped)
  * @access  Private
  */
 router.get('/stats/summary', authenticateToken, async (req, res) => {
   try {
+    const tenantId = getReqTenantId(req);
     const stats = await cachedDb.get(`
       SELECT 
         COUNT(*) as total,
@@ -347,29 +325,26 @@ router.get('/stats/summary', authenticateToken, async (req, res) => {
         AVG(digital_presence_score) as avg_digital_score,
         AVG(opportunity_score) as avg_opportunity_score
       FROM businesses
-    `);
+      WHERE tenant_id = ?
+    `, [tenantId]);
 
     const byRegion = await cachedDb.all(`
       SELECT region, COUNT(*) as count
       FROM businesses
-      WHERE region IS NOT NULL AND region != ''
+      WHERE tenant_id = ? AND region IS NOT NULL AND region != ''
       GROUP BY region
       ORDER BY count DESC
       LIMIT 10
-    `);
+    `, [tenantId]);
 
     const byIndustry = await cachedDb.all(`
       SELECT industry, COUNT(*) as count
       FROM businesses
-      WHERE industry IS NOT NULL AND industry != ''
+      WHERE tenant_id = ? AND industry IS NOT NULL AND industry != ''
       GROUP BY industry
       ORDER BY count DESC
       LIMIT 10
-    `);
-
-    logger.info('Business stats fetched successfully', {
-      userId: req.user.id
-    });
+    `, [tenantId]);
 
     res.json({
       success: true,

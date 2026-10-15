@@ -9,12 +9,19 @@ class ProjectBuilderAgent {
     this.currentTask = null;
     
     // Validate API key
-    if (!process.env.GEMINI_API_KEY) {
-      console.error('GEMINI_API_KEY environment variable is not set');
-      throw new Error('GEMINI_API_KEY environment variable is required');
+    if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === 'your_gemini_api_key_here') {
+      console.warn('GEMINI_API_KEY not configured. ProjectBuilderAgent in standby/offline mode.');
+      this.isActive = false;
+      this.geminiAI = null;
+    } else {
+      try {
+        this.geminiAI = new GoogleGenAI(process.env.GEMINI_API_KEY);
+      } catch (err) {
+        console.warn('Failed to init Gemini in ProjectBuilderAgent:', err.message);
+        this.isActive = false;
+        this.geminiAI = null;
+      }
     }
-    
-    this.geminiAI = new GoogleGenAI(process.env.GEMINI_API_KEY);
     this.buildQueue = [];
     this.isProcessing = false;
     this.projectsDir = path.join(process.cwd(), 'generated-projects');

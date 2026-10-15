@@ -245,14 +245,14 @@ netstat -ano | findstr :3001
 VITE_API_URL=https://biggrow-production.up.railway.app
 VITE_WS_URL=wss://biggrow-production.up.railway.app
 VITE_GOOGLE_MAPS_API_KEY=<your-key>
-VITE_GEMINI_API_KEY=AIzaSyCSlv1bnDKUmCI2ao15rhmc4N_f6BAXZ5c
+VITE_GEMINI_API_KEY=<your-gemini-api-key>
 ```
 
 **Required in `server/.env`**:
 ```env
 PORT=3001
 NODE_ENV=development
-GEMINI_API_KEY=AIzaSyCSlv1bnDKUmCI2ao15rhmc4N_f6BAXZ5c
+GEMINI_API_KEY=<your-gemini-api-key>
 JWT_SECRET=<your-secret>
 ```
 

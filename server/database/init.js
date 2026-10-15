@@ -180,9 +180,33 @@ const seedInitialDataPostgres = async () => {
 const createTables = () => {
   return new Promise((resolve, reject) => {
     const tables = [
+      // Tenants table
+      `CREATE TABLE IF NOT EXISTS tenants (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        slug TEXT UNIQUE NOT NULL,
+        plan_type TEXT DEFAULT 'free',
+        status TEXT DEFAULT 'active',
+        max_users INTEGER DEFAULT 10,
+        max_businesses INTEGER DEFAULT 500,
+        max_proposals INTEGER DEFAULT 100,
+        max_storage_mb INTEGER DEFAULT 1000,
+        current_users INTEGER DEFAULT 0,
+        current_businesses INTEGER DEFAULT 0,
+        current_proposals INTEGER DEFAULT 0,
+        current_storage_mb INTEGER DEFAULT 0,
+        require_mfa BOOLEAN DEFAULT FALSE,
+        feature_flags TEXT DEFAULT '{}',
+        custom_settings TEXT DEFAULT '{}',
+        branding_config TEXT DEFAULT '{}',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )`,
+
       // Users table for authentication
       `CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        tenant_id TEXT DEFAULT 'default',
         email TEXT UNIQUE NOT NULL,
         password_hash TEXT NOT NULL,
         first_name TEXT NOT NULL,
@@ -197,10 +221,23 @@ const createTables = () => {
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         last_login_at DATETIME
       )`,
+
+      // Refresh Tokens table for session security and token rotation
+      `CREATE TABLE IF NOT EXISTS refresh_tokens (
+        id TEXT PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        token_hash TEXT NOT NULL,
+        expires_at DATETIME NOT NULL,
+        revoked_at DATETIME,
+        replaced_by_token TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+      )`,
       
       // Businesses table
       `CREATE TABLE IF NOT EXISTS businesses (
         id TEXT PRIMARY KEY,
+        tenant_id TEXT DEFAULT 'default',
         name TEXT NOT NULL,
         address TEXT NOT NULL,
         phone TEXT,
@@ -221,6 +258,7 @@ const createTables = () => {
       // Proposals table
       `CREATE TABLE IF NOT EXISTS proposals (
         id TEXT PRIMARY KEY,
+        tenant_id TEXT DEFAULT 'default',
         business_id TEXT NOT NULL,
         content TEXT NOT NULL,
         status TEXT DEFAULT 'draft',
@@ -234,6 +272,7 @@ const createTables = () => {
       // Projects table
       `CREATE TABLE IF NOT EXISTS projects (
         id TEXT PRIMARY KEY,
+        tenant_id TEXT DEFAULT 'default',
         business_id TEXT NOT NULL,
         proposal_id TEXT,
         project_type TEXT NOT NULL,
@@ -246,6 +285,20 @@ const createTables = () => {
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (business_id) REFERENCES businesses (id),
         FOREIGN KEY (proposal_id) REFERENCES proposals (id)
+      )`,
+
+      // Audit Log table
+      `CREATE TABLE IF NOT EXISTS audit_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        tenant_id TEXT NOT NULL,
+        user_id INTEGER,
+        action TEXT NOT NULL,
+        resource_type TEXT NOT NULL,
+        resource_id TEXT,
+        details TEXT,
+        ip TEXT,
+        user_agent TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )`,
       
       // Activity Log table
@@ -297,7 +350,22 @@ const createTables = () => {
         completed++;
         if (completed === total) {
           console.log('All database tables created successfully');
-          seedInitialData().then(resolve).catch(reject);
+          // Ensure tenant_id exists on legacy tables if upgrading existing database
+          const ensureColumns = [
+            `ALTER TABLE users ADD COLUMN tenant_id TEXT DEFAULT 'default'`,
+            `ALTER TABLE businesses ADD COLUMN tenant_id TEXT DEFAULT 'default'`,
+            `ALTER TABLE proposals ADD COLUMN tenant_id TEXT DEFAULT 'default'`,
+            `ALTER TABLE projects ADD COLUMN tenant_id TEXT DEFAULT 'default'`
+          ];
+          let colDone = 0;
+          ensureColumns.forEach(alterSql => {
+            db.run(alterSql, () => {
+              colDone++;
+              if (colDone === ensureColumns.length) {
+                seedInitialData().then(resolve).catch(reject);
+              }
+            });
+          });
         }
       });
     });
@@ -340,6 +408,38 @@ const seedInitialData = () => {
 
     let completed = 0;
     const total = agents.length;
+
+    // Seed default tenants and users
+    db.run(
+      `INSERT OR IGNORE INTO tenants (id, name, slug, plan_type, status)
+       VALUES ('default', 'Default Enterprise', 'default', 'enterprise', 'active')`,
+      () => {
+        db.run(
+          `INSERT OR IGNORE INTO tenants (id, name, slug, plan_type, status)
+           VALUES ('tenant-beta', 'Beta Logistics', 'beta', 'starter', 'active')`,
+          () => {
+            // Seed default admin and user (Password: Admin123! and User123!)
+            const adminHash = '$2b$10$w0uR/xKqP.uUf4mZz55t9ecwM4g5yH7l8y3QfR8tG1K1Q8f9J7Z7.';
+            db.run(
+              `INSERT OR IGNORE INTO users (tenant_id, email, password_hash, first_name, last_name, role)
+               VALUES ('default', 'admin@bizgrow.ai', '$2b$10$EP7jLq0n9W3q8F9O.b0YreV7I3P6r.kYkLzT2F9U0c5V6P4E2l4yC', 'System', 'Admin', 'admin')`,
+              () => {
+                db.run(
+                  `INSERT OR IGNORE INTO users (tenant_id, email, password_hash, first_name, last_name, role)
+                   VALUES ('default', 'user@bizgrow.ai', '$2b$10$EP7jLq0n9W3q8F9O.b0YreV7I3P6r.kYkLzT2F9U0c5V6P4E2l4yC', 'Demo', 'User', 'user')`,
+                  () => {
+                    db.run(
+                      `INSERT OR IGNORE INTO users (tenant_id, email, password_hash, first_name, last_name, role)
+                       VALUES ('tenant-beta', 'beta@bizgrow.ai', '$2b$10$EP7jLq0n9W3q8F9O.b0YreV7I3P6r.kYkLzT2F9U0c5V6P4E2l4yC', 'Beta', 'Member', 'user')`
+                    );
+                  }
+                );
+              }
+            );
+          }
+        );
+      }
+    );
 
     agents.forEach(agent => {
       db.run(

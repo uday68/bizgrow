@@ -1,8 +1,9 @@
 import express from 'express';
 import { body, validationResult } from 'express-validator';
 import { JWTTokenManager, PasswordManager, authenticateToken } from '../middleware/auth.js';
-import { getDatabase } from '../database/init.js';
+import cachedDb from '../services/cachedDatabase.js';
 import { authLimiter } from '../middleware/auth.js';
+import logger from '../services/logger.js';
 
 const router = express.Router();
 
@@ -17,7 +18,8 @@ const validateRegister = [
   body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters long'),
   body('firstName').trim().isLength({ min: 1 }).withMessage('First name is required'),
   body('lastName').trim().isLength({ min: 1 }).withMessage('Last name is required'),
-  body('role').optional().isIn(['user', 'developer', 'admin']).withMessage('Invalid role')
+  body('role').optional().isIn(['user', 'developer', 'admin']).withMessage('Invalid role'),
+  body('tenantId').optional().trim()
 ];
 
 // Login endpoint
@@ -32,15 +34,9 @@ router.post('/login', authLimiter, validateLogin, async (req, res) => {
     }
 
     const { email, password } = req.body;
-    const db = getDatabase();
 
-    // Find user in database
-    const user = await new Promise((resolve, reject) => {
-      db.get('SELECT * FROM users WHERE email = ?', [email], (err, row) => {
-        if (err) reject(err);
-        else resolve(row);
-      });
-    });
+    // Find user in database with tenant awareness
+    const user = await cachedDb.get('SELECT * FROM users WHERE email = ?', [email]);
 
     if (!user) {
       return res.status(401).json({
@@ -59,20 +55,18 @@ router.post('/login', authLimiter, validateLogin, async (req, res) => {
     }
 
     // Update last login
-    await new Promise((resolve, reject) => {
-      db.run('UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?', [user.id], (err) => {
-        if (err) reject(err);
-        else resolve();
-      });
-    });
+    await cachedDb.run('UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?', [user.id]);
 
     // Generate tokens
     const tokens = JWTTokenManager.generateTokens(user);
+
+    logger.info('User logged in successfully', { userId: user.id, tenantId: user.tenant_id });
 
     res.json({
       success: true,
       user: {
         id: user.id,
+        tenantId: user.tenant_id || 'default',
         email: user.email,
         firstName: user.first_name,
         lastName: user.last_name,
@@ -82,7 +76,7 @@ router.post('/login', authLimiter, validateLogin, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Login error:', error);
+    logger.error('Login error:', { error: error.message });
     res.status(500).json({
       error: 'Internal server error',
       code: 'INTERNAL_ERROR'
@@ -101,7 +95,7 @@ router.post('/register', validateRegister, async (req, res) => {
       });
     }
 
-    const { email, password, firstName, lastName, role = 'user' } = req.body;
+    const { email, password, firstName, lastName, role = 'user', tenantId = 'default' } = req.body;
 
     // Validate password strength
     const passwordValidation = PasswordManager.validatePasswordStrength(password);
@@ -112,15 +106,8 @@ router.post('/register', validateRegister, async (req, res) => {
       });
     }
 
-    const db = getDatabase();
-
     // Check if user already exists
-    const existingUser = await new Promise((resolve, reject) => {
-      db.get('SELECT id FROM users WHERE email = ?', [email], (err, row) => {
-        if (err) reject(err);
-        else resolve(row);
-      });
-    });
+    const existingUser = await cachedDb.get('SELECT id FROM users WHERE email = ?', [email]);
 
     if (existingUser) {
       return res.status(409).json({
@@ -132,19 +119,17 @@ router.post('/register', validateRegister, async (req, res) => {
     // Hash password
     const passwordHash = await PasswordManager.hashPassword(password);
 
-    // Create user
-    const userId = await new Promise((resolve, reject) => {
-      db.run(`
-        INSERT INTO users (email, password_hash, first_name, last_name, role, created_at)
-        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-      `, [email, passwordHash, firstName, lastName, role], function(err) {
-        if (err) reject(err);
-        else resolve(this.lastID);
-      });
-    });
+    // Create user with explicit tenantId
+    const result = await cachedDb.run(`
+      INSERT INTO users (tenant_id, email, password_hash, first_name, last_name, role, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    `, [tenantId, email, passwordHash, firstName, lastName, role]);
+
+    const userId = result.lastID;
 
     const newUser = {
       id: userId,
+      tenant_id: tenantId,
       email,
       first_name: firstName,
       last_name: lastName,
@@ -154,10 +139,13 @@ router.post('/register', validateRegister, async (req, res) => {
     // Generate tokens
     const tokens = JWTTokenManager.generateTokens(newUser);
 
+    logger.info('New user registered', { userId, tenantId, email });
+
     res.status(201).json({
       success: true,
       user: {
         id: newUser.id,
+        tenantId: newUser.tenant_id,
         email: newUser.email,
         firstName: newUser.first_name,
         lastName: newUser.last_name,
@@ -167,7 +155,7 @@ router.post('/register', validateRegister, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Registration error:', error);
+    logger.error('Registration error:', { error: error.message });
     res.status(500).json({
       error: 'Internal server error',
       code: 'INTERNAL_ERROR'
@@ -187,7 +175,9 @@ router.post('/refresh', async (req, res) => {
       });
     }
 
-    const tokens = JWTTokenManager.refreshAccessToken(refreshToken);
+    const tokens = await JWTTokenManager.refreshAccessToken(refreshToken, async (userId) => {
+      return await cachedDb.get('SELECT id, email, role, tenant_id FROM users WHERE id = ?', [userId]);
+    });
 
     res.json({
       success: true,
@@ -195,18 +185,21 @@ router.post('/refresh', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Token refresh error:', error);
+    logger.warn('Token refresh failed:', { error: error.message });
     res.status(401).json({
       error: 'Invalid refresh token',
-      code: 'INVALID_REFRESH_TOKEN'
+      code: 'INVALID_REFRESH_TOKEN',
+      details: error.message
     });
   }
 });
 
 // Logout endpoint
 router.post('/logout', async (req, res) => {
-  // In a production system, you would invalidate the token in a blacklist
-  // For now, we'll just return success
+  const { refreshToken } = req.body;
+  if (refreshToken) {
+    await JWTTokenManager.revokeToken?.(refreshToken);
+  }
   res.json({
     success: true,
     message: 'Logged out successfully'
@@ -217,14 +210,10 @@ router.post('/logout', async (req, res) => {
 router.get('/me', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
-    const db = getDatabase();
-
-    const user = await new Promise((resolve, reject) => {
-      db.get('SELECT id, email, first_name, last_name, role, created_at, last_login_at FROM users WHERE id = ?', [userId], (err, row) => {
-        if (err) reject(err);
-        else resolve(row);
-      });
-    });
+    const user = await cachedDb.get(
+      'SELECT id, tenant_id, email, first_name, last_name, role, created_at, last_login_at FROM users WHERE id = ?',
+      [userId]
+    );
 
     if (!user) {
       return res.status(404).json({
@@ -237,6 +226,7 @@ router.get('/me', authenticateToken, async (req, res) => {
       success: true,
       user: {
         id: user.id,
+        tenantId: user.tenant_id || req.user.tenantId || 'default',
         email: user.email,
         firstName: user.first_name,
         lastName: user.last_name,
@@ -247,7 +237,7 @@ router.get('/me', authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Get user profile error:', error);
+    logger.error('Get user profile error:', { error: error.message });
     res.status(500).json({
       error: 'Internal server error',
       code: 'INTERNAL_ERROR'

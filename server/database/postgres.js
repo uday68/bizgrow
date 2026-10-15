@@ -40,7 +40,7 @@ class PostgreSQLDatabase {
       port: parseInt(process.env.DB_PORT) || 5432,
       database: process.env.DB_NAME || 'bizgrow_ai',
       user: process.env.DB_USER || 'postgres',
-      password: process.env.DB_PASSWORD || 'password',
+      password: process.env.DB_PASSWORD || (process.env.NODE_ENV === 'production' ? undefined : 'postgres'),
       
       // Connection Pool Configuration
       min: parseInt(process.env.DB_POOL_MIN) || 5,
@@ -53,10 +53,13 @@ class PostgreSQLDatabase {
       query_timeout: 30000,
       statement_timeout: 30000,
       
-      // SSL Configuration for production
-      ssl: process.env.NODE_ENV === 'production' ? {
-        rejectUnauthorized: false
-      } : false,
+      // SSL Configuration: Production enforces valid certificate verification
+      ssl: process.env.NODE_ENV === 'production' ? (
+        process.env.DB_SSL === 'false' ? false : {
+          rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false',
+          ca: process.env.DB_SSL_CA ? process.env.DB_SSL_CA : undefined
+        }
+      ) : (process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false),
       
       // Application name for monitoring
       application_name: 'bizgrow_ai_server'

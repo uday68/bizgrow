@@ -34,7 +34,7 @@ console.log('📋 Required Variables:');
 for (const varName of requiredVars) {
   const value = process.env[varName];
   if (value) {
-    console.log(`✅ ${varName}: ${varName === 'GEMINI_API_KEY' ? value.substring(0, 10) + '...' : value}`);
+    console.log(`✅ ${varName}: [CONFIGURED]`);
   } else {
     console.log(`❌ ${varName}: NOT SET`);
     allRequired = false;

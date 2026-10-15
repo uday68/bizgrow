@@ -20,7 +20,14 @@ try {
 }
 
 // JWT Configuration
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-change-in-production';
+const isProduction = process.env.NODE_ENV === 'production';
+const JWT_SECRET = process.env.JWT_SECRET || (isProduction ? null : 'bizgrow-dev-secret-key-at-least-32-chars-long!');
+
+if (isProduction && (!JWT_SECRET || JWT_SECRET === 'fallback-secret-change-in-production' || JWT_SECRET.length < 32)) {
+  console.error('FATAL SECURITY ERROR: Mandatory 32+ character JWT_SECRET must be configured in production.');
+  process.exit(1);
+}
+
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '1h';
 const JWT_REFRESH_EXPIRES_IN = process.env.JWT_REFRESH_EXPIRES_IN || '7d';
 const BCRYPT_ROUNDS = parseInt(process.env.BCRYPT_ROUNDS) || 12;
@@ -41,26 +48,31 @@ const ROLE_HIERARCHY = {
 // JWT Token Manager
 export class JWTTokenManager {
   static generateTokens(user) {
+    const tenantId = user.tenant_id || user.tenantId || 'default';
     const payload = {
       id: user.id,
       email: user.email,
-      role: user.role,
-      permissions: this.getRolePermissions(user.role)
+      role: user.role || ROLES.USER,
+      tenantId: tenantId,
+      permissions: this.getRolePermissions(user.role || ROLES.USER)
     };
 
     const accessToken = jwt.sign(payload, JWT_SECRET, { 
       expiresIn: JWT_EXPIRES_IN,
       issuer: 'bizgrow-ai',
-      audience: 'bizgrow-users'
+      audience: 'bizgrow-users',
+      algorithm: 'HS256'
     });
 
+    const tokenId = `rt_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
     const refreshToken = jwt.sign(
-      { id: user.id, type: 'refresh' }, 
+      { id: user.id, jti: tokenId, type: 'refresh', tenantId }, 
       JWT_SECRET, 
       { 
         expiresIn: JWT_REFRESH_EXPIRES_IN,
         issuer: 'bizgrow-ai',
-        audience: 'bizgrow-users'
+        audience: 'bizgrow-users',
+        algorithm: 'HS256'
       }
     );
 
@@ -76,22 +88,40 @@ export class JWTTokenManager {
     try {
       return jwt.verify(token, JWT_SECRET, {
         issuer: 'bizgrow-ai',
-        audience: 'bizgrow-users'
+        audience: 'bizgrow-users',
+        algorithms: ['HS256']
       });
     } catch (error) {
       throw new Error(`Token verification failed: ${error.message}`);
     }
   }
 
-  static refreshAccessToken(refreshToken) {
+  static async refreshAccessToken(refreshToken, dbAccessor = null) {
     try {
-      const decoded = jwt.verify(refreshToken, JWT_SECRET);
+      const decoded = jwt.verify(refreshToken, JWT_SECRET, {
+        issuer: 'bizgrow-ai',
+        audience: 'bizgrow-users',
+        algorithms: ['HS256']
+      });
+
       if (decoded.type !== 'refresh') {
         throw new Error('Invalid refresh token type');
       }
-      
-      // In production, fetch user from database using decoded.id
-      const user = { id: decoded.id, email: 'user@example.com', role: ROLES.USER };
+
+      let user = null;
+      if (dbAccessor) {
+        user = await dbAccessor(decoded.id);
+      }
+
+      if (!user) {
+        user = { 
+          id: decoded.id, 
+          email: decoded.email || 'user@example.com', 
+          role: decoded.role || ROLES.USER,
+          tenantId: decoded.tenantId || 'default'
+        };
+      }
+
       return this.generateTokens(user);
     } catch (error) {
       throw new Error(`Refresh token verification failed: ${error.message}`);
@@ -723,7 +753,7 @@ export const corsMiddleware = cors({
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Tenant-ID', 'X-Correlation-ID']
 });
 
 // Request Logging

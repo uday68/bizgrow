@@ -5,16 +5,23 @@ import logger from '../services/logger.js';
 
 const router = express.Router();
 
+const getReqTenantId = (req) => {
+  return req.tenantId || req.user?.tenantId || 'default';
+};
+
 /**
  * @route   GET /api/proposals
- * @desc    Get all proposals with business information
+ * @desc    Get all proposals scoped to authenticated tenant
  * @access  Private
  */
 router.get('/', authenticateToken, async (req, res) => {
   try {
+    const tenantId = getReqTenantId(req);
+
     const proposals = await cachedDb.all(`
       SELECT 
         p.id,
+        p.tenant_id,
         p.business_id,
         p.content,
         p.status,
@@ -31,10 +38,12 @@ router.get('/', authenticateToken, async (req, res) => {
         b.rating as business_rating
       FROM proposals p
       LEFT JOIN businesses b ON p.business_id = b.id
+      WHERE p.tenant_id = ?
       ORDER BY p.created_at DESC
-    `);
+    `, [tenantId]);
 
     logger.info('Proposals fetched successfully', {
+      tenantId,
       count: proposals.length,
       userId: req.user.id
     });
@@ -52,16 +61,18 @@ router.get('/', authenticateToken, async (req, res) => {
 
 /**
  * @route   GET /api/proposals/:id
- * @desc    Get a single proposal by ID
+ * @desc    Get a single proposal by ID (tenant-scoped)
  * @access  Private
  */
 router.get('/:id', authenticateToken, async (req, res) => {
   try {
+    const tenantId = getReqTenantId(req);
     const { id } = req.params;
 
     const proposal = await cachedDb.get(`
       SELECT 
         p.id,
+        p.tenant_id,
         p.business_id,
         p.content,
         p.status,
@@ -82,8 +93,8 @@ router.get('/:id', authenticateToken, async (req, res) => {
         b.industry as business_industry
       FROM proposals p
       LEFT JOIN businesses b ON p.business_id = b.id
-      WHERE p.id = ?
-    `, [id]);
+      WHERE p.id = ? AND p.tenant_id = ?
+    `, [id, tenantId]);
 
     if (!proposal) {
       return res.status(404).json({ 
@@ -91,11 +102,6 @@ router.get('/:id', authenticateToken, async (req, res) => {
         message: 'Proposal not found' 
       });
     }
-
-    logger.info('Proposal fetched successfully', {
-      proposalId: id,
-      userId: req.user.id
-    });
 
     res.json(proposal);
   } catch (error) {
@@ -110,11 +116,12 @@ router.get('/:id', authenticateToken, async (req, res) => {
 
 /**
  * @route   POST /api/proposals/generate
- * @desc    Generate a new proposal for a business
+ * @desc    Generate a new proposal for a business within tenant boundary
  * @access  Private
  */
 router.post('/generate', authenticateToken, async (req, res) => {
   try {
+    const tenantId = getReqTenantId(req);
     const { businessId } = req.body;
 
     if (!businessId) {
@@ -124,23 +131,23 @@ router.post('/generate', authenticateToken, async (req, res) => {
       });
     }
 
-    // Check if business exists
+    // Check if business exists within tenant
     const business = await cachedDb.get(
-      'SELECT * FROM businesses WHERE id = ?',
-      [businessId]
+      'SELECT * FROM businesses WHERE id = ? AND tenant_id = ?',
+      [businessId, tenantId]
     );
 
     if (!business) {
       return res.status(404).json({ 
         success: false, 
-        message: 'Business not found' 
+        message: 'Business not found in current tenant' 
       });
     }
 
     // Check if proposal already exists
     const existingProposal = await cachedDb.get(
-      'SELECT id FROM proposals WHERE business_id = ?',
-      [businessId]
+      'SELECT id FROM proposals WHERE business_id = ? AND tenant_id = ?',
+      [businessId, tenantId]
     );
 
     if (existingProposal) {
@@ -151,40 +158,30 @@ router.post('/generate', authenticateToken, async (req, res) => {
       });
     }
 
-    // Generate proposal content (simplified version - can be enhanced with AI)
     const proposalContent = generateProposalContent(business);
+    const proposalId = `prop_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
-    // Insert proposal
-    const result = await cachedDb.run(`
-      INSERT INTO proposals (business_id, content, status, created_at, updated_at)
-      VALUES (?, ?, 'draft', datetime('now'), datetime('now'))
-    `, [businessId, proposalContent]);
+    await cachedDb.run(`
+      INSERT INTO proposals (id, tenant_id, business_id, content, status, created_at)
+      VALUES (?, ?, ?, ?, 'draft', CURRENT_TIMESTAMP)
+    `, [proposalId, tenantId, businessId, proposalContent]);
 
-    const proposalId = result.lastID;
-
-    // Fetch the created proposal
     const proposal = await cachedDb.get(`
       SELECT 
         p.id,
+        p.tenant_id,
         p.business_id,
         p.content,
         p.status,
         p.created_at,
-        p.updated_at,
         b.name as business_name,
         b.address as business_address,
         b.phone as business_phone,
         b.email as business_email
       FROM proposals p
       LEFT JOIN businesses b ON p.business_id = b.id
-      WHERE p.id = ?
-    `, [proposalId]);
-
-    logger.info('Proposal generated successfully', {
-      proposalId,
-      businessId,
-      userId: req.user.id
-    });
+      WHERE p.id = ? AND p.tenant_id = ?
+    `, [proposalId, tenantId]);
 
     res.status(201).json({
       success: true,
@@ -203,18 +200,18 @@ router.post('/generate', authenticateToken, async (req, res) => {
 
 /**
  * @route   PUT /api/proposals/:id
- * @desc    Update a proposal
+ * @desc    Update a proposal (tenant-scoped)
  * @access  Private
  */
 router.put('/:id', authenticateToken, async (req, res) => {
   try {
+    const tenantId = getReqTenantId(req);
     const { id } = req.params;
     const { content, status, interest_level } = req.body;
 
-    // Check if proposal exists
     const proposal = await cachedDb.get(
-      'SELECT id FROM proposals WHERE id = ?',
-      [id]
+      'SELECT id FROM proposals WHERE id = ? AND tenant_id = ?',
+      [id, tenantId]
     );
 
     if (!proposal) {
@@ -224,7 +221,6 @@ router.put('/:id', authenticateToken, async (req, res) => {
       });
     }
 
-    // Build update query dynamically
     const updates = [];
     const values = [];
 
@@ -236,10 +232,8 @@ router.put('/:id', authenticateToken, async (req, res) => {
     if (status !== undefined) {
       updates.push('status = ?');
       values.push(status);
-
-      // If status is being set to 'sent', update sent_at
       if (status === 'sent') {
-        updates.push('sent_at = datetime(\'now\')');
+        updates.push('sent_at = CURRENT_TIMESTAMP');
       }
     }
 
@@ -248,19 +242,19 @@ router.put('/:id', authenticateToken, async (req, res) => {
       values.push(interest_level);
     }
 
-    updates.push('updated_at = datetime(\'now\')');
-    values.push(id);
+    updates.push('updated_at = CURRENT_TIMESTAMP');
+    values.push(id, tenantId);
 
     await cachedDb.run(`
       UPDATE proposals 
       SET ${updates.join(', ')}
-      WHERE id = ?
+      WHERE id = ? AND tenant_id = ?
     `, values);
 
-    // Fetch updated proposal
     const updatedProposal = await cachedDb.get(`
       SELECT 
         p.id,
+        p.tenant_id,
         p.business_id,
         p.content,
         p.status,
@@ -275,13 +269,8 @@ router.put('/:id', authenticateToken, async (req, res) => {
         b.email as business_email
       FROM proposals p
       LEFT JOIN businesses b ON p.business_id = b.id
-      WHERE p.id = ?
-    `, [id]);
-
-    logger.info('Proposal updated successfully', {
-      proposalId: id,
-      userId: req.user.id
-    });
+      WHERE p.id = ? AND p.tenant_id = ?
+    `, [id, tenantId]);
 
     res.json({
       success: true,
@@ -300,14 +289,14 @@ router.put('/:id', authenticateToken, async (req, res) => {
 
 /**
  * @route   DELETE /api/proposals/:id
- * @desc    Delete a proposal
+ * @desc    Delete a proposal (tenant-scoped)
  * @access  Private (Admin only)
  */
 router.delete('/:id', authenticateToken, async (req, res) => {
   try {
+    const tenantId = getReqTenantId(req);
     const { id } = req.params;
 
-    // Check if user is admin
     if (req.user.role !== 'admin') {
       return res.status(403).json({ 
         success: false, 
@@ -315,10 +304,9 @@ router.delete('/:id', authenticateToken, async (req, res) => {
       });
     }
 
-    // Check if proposal exists
     const proposal = await cachedDb.get(
-      'SELECT id FROM proposals WHERE id = ?',
-      [id]
+      'SELECT id FROM proposals WHERE id = ? AND tenant_id = ?',
+      [id, tenantId]
     );
 
     if (!proposal) {
@@ -328,12 +316,7 @@ router.delete('/:id', authenticateToken, async (req, res) => {
       });
     }
 
-    await cachedDb.run('DELETE FROM proposals WHERE id = ?', [id]);
-
-    logger.info('Proposal deleted successfully', {
-      proposalId: id,
-      userId: req.user.id
-    });
+    await cachedDb.run('DELETE FROM proposals WHERE id = ? AND tenant_id = ?', [id, tenantId]);
 
     res.json({
       success: true,
@@ -349,127 +332,39 @@ router.delete('/:id', authenticateToken, async (req, res) => {
   }
 });
 
-/**
- * @route   GET /api/proposals/business/:businessId
- * @desc    Get all proposals for a specific business
- * @access  Private
- */
-router.get('/business/:businessId', authenticateToken, async (req, res) => {
-  try {
-    const { businessId } = req.params;
-
-    const proposals = await cachedDb.all(`
-      SELECT 
-        p.id,
-        p.business_id,
-        p.content,
-        p.status,
-        p.sent_at,
-        p.response_at,
-        p.interest_level,
-        p.created_at,
-        p.updated_at
-      FROM proposals p
-      WHERE p.business_id = ?
-      ORDER BY p.created_at DESC
-    `, [businessId]);
-
-    logger.info('Business proposals fetched successfully', {
-      businessId,
-      count: proposals.length,
-      userId: req.user.id
-    });
-
-    res.json(proposals);
-  } catch (error) {
-    logger.error('Error fetching business proposals:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Failed to fetch business proposals',
-      error: error.message 
-    });
-  }
-});
-
-/**
- * Helper function to generate proposal content
- * This is a simplified version - can be enhanced with AI/LLM integration
- */
 function generateProposalContent(business) {
   const services = [];
-  
-  // Determine services based on business characteristics
   if (!business.website || business.website === '') {
     services.push('Professional Website Development');
   }
-  
-  if (business.digital_presence_score < 50) {
+  if ((business.digital_presence_score || 0) < 50) {
     services.push('Digital Marketing Strategy');
     services.push('Social Media Management');
   }
-  
   if (business.rating && business.rating < 4.0) {
     services.push('Online Reputation Management');
   }
-  
   services.push('SEO Optimization');
   services.push('Business Analytics Dashboard');
 
-  const proposal = `
+  return `
 # Digital Transformation Proposal for ${business.name}
 
 ## Executive Summary
-
 We are pleased to present this comprehensive digital transformation proposal for ${business.name}. Our analysis indicates significant opportunities to enhance your digital presence and drive business growth.
 
 ## Current Situation
-
 - **Business Name:** ${business.name}
 - **Location:** ${business.address}
 - **Industry:** ${business.industry || 'General Business'}
-- **Digital Presence Score:** ${business.digital_presence_score || 0}/100
-- **Opportunity Score:** ${business.opportunity_score || 0}/100
 
 ## Recommended Services
-
 ${services.map((service, index) => `${index + 1}. **${service}**`).join('\n')}
 
-## Implementation Timeline
-
-- **Phase 1 (Weeks 1-2):** Discovery and Planning
-- **Phase 2 (Weeks 3-6):** Development and Implementation
-- **Phase 3 (Weeks 7-8):** Testing and Optimization
-- **Phase 4 (Week 9+):** Launch and Ongoing Support
-
-## Investment
-
-We offer flexible pricing packages tailored to your specific needs. Our team will work with you to create a customized solution that fits your budget and delivers maximum ROI.
-
 ## Next Steps
-
-1. Schedule a consultation call to discuss your specific needs
-2. Review and approve the detailed project plan
-3. Begin implementation with our expert team
-
-## Why Choose BizGrow AI?
-
-- **Proven Track Record:** Successfully delivered 100+ digital transformation projects
-- **AI-Powered Solutions:** Cutting-edge technology for optimal results
-- **Dedicated Support:** 24/7 customer support and ongoing maintenance
-- **Results-Driven:** Focus on measurable business outcomes
-
-We look forward to partnering with you to transform your digital presence and drive business growth.
-
----
-
-**Contact Information:**
-BizGrow AI - Digital Transformation Experts
-Email: contact@bizgrow.ai
-Phone: (555) 123-4567
-Website: www.bizgrow.ai
-`;
-
-  return proposal.trim();
+1. Schedule a consultation call to discuss technical milestones.
+2. Review and approve the implementation roadmap.
+`.trim();
 }
 
 export default router;

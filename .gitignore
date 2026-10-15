@@ -21,6 +21,9 @@ dist-ssr
 
 # Database files
 *.db
+*.db-journal
+*.db-wal
+*.db-shm
 *.sqlite
 *.sqlite3
 
@@ -35,8 +38,14 @@ server/generated-projects/
 *.suo
 *.ntvs*
 *.njsproj
-*.sln
 *.sw?
+
+# .NET build artifacts
+bin/
+obj/
+*.user
+*.userosscache
+*.sln.docstates
 
 # Temporary files
 tmp/

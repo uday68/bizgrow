@@ -360,7 +360,7 @@ curl -X POST https://biggrow-production.up.railway.app/api/chat/quotations/gener
 
 #### Backend (Railway)
 ```env
-GEMINI_API_KEY=AIzaSyCSlv1bnDKUmCI2ao15rhmc4N_f6BAXZ5c
+GEMINI_API_KEY=your_gemini_api_key_here
 PORT=3001
 NODE_ENV=production
 ```
