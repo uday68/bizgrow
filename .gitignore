@@ -41,11 +41,12 @@ server/generated-projects/
 *.sw?
 
 # .NET build artifacts
-bin/
-obj/
+**/bin/
+**/obj/
 *.user
 *.userosscache
 *.sln.docstates
+.vs/
 
 # Temporary files
 tmp/
