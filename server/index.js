@@ -68,6 +68,7 @@ import aiRoutes from './routes/ai.js';
 import tenantsRoutes from './routes/tenants.js';
 import tenantAnalyticsRoutes from './routes/tenantAnalytics.js';
 import tenantIsolation from './middleware/tenantIsolation.js';
+import connectorsRoutes from './routes/connectors.js';
 
 // Import Cache Services
 import cacheService from './services/cacheService.js';
@@ -425,6 +426,9 @@ app.use('/api/businesses', authenticateToken, tenantIsolation, businessesRoutes)
 
 // Proposals routes (authenticated and tenant-isolated)
 app.use('/api/proposals', authenticateToken, tenantIsolation, proposalsRoutes);
+
+// Enterprise Connectors & Ingestion (tenant-isolated gateway to .NET Connector service)
+app.use('/api/connectors', tenantIsolation, connectorsRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

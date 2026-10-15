@@ -19,7 +19,8 @@ import {
   Database,
   Users,
   HardDrive,
-  GitBranch
+  GitBranch,
+  Cloud
 } from 'lucide-react';
 import LeadSearch from './components/LeadSearch';
 import EnhancedLeadSearch from './components/EnhancedLeadSearch';
@@ -38,6 +39,7 @@ import BackupManagementPage from './components/BackupManagementPage';
 import MigrationManagementPage from './components/MigrationManagementPage';
 import AgentHealthDashboard from './components/AgentHealthDashboard';
 import NotificationCenter from './components/NotificationCenter';
+import { ConnectorManagementPage } from './components/ConnectorManagementPage';
 
 import ProtectedRoute from './components/ProtectedRoute';
 import LoginForm from './components/LoginForm';
@@ -71,6 +73,7 @@ const Sidebar = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) 
   ];
 
   const systemItems = [
+    { path: '/connectors', icon: Cloud, label: 'Connectors & Ingestion', color: 'blue', roles: ['admin', 'developer'] },
     { path: '/tenants', icon: Users, label: 'Tenants', color: 'indigo', roles: ['admin'] },
     { path: '/backups', icon: HardDrive, label: 'Backups', color: 'teal', roles: ['admin'] },
     { path: '/migrations', icon: GitBranch, label: 'Migrations', color: 'orange', roles: ['admin'] },
@@ -466,6 +469,14 @@ const App: React.FC = () => {
                     element={
                       <ProtectedRoute requiredRole="developer">
                         <DatabaseHealthPage />
+                      </ProtectedRoute>
+                    } 
+                  />
+                  <Route 
+                    path="/connectors" 
+                    element={
+                      <ProtectedRoute requiredRole="developer">
+                        <ConnectorManagementPage />
                       </ProtectedRoute>
                     } 
                   />
