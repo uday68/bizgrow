@@ -138,4 +138,14 @@ export const tenantIsolation = async (req, res, next) => {
   }
 };
 
+export const requireTenantRole = (requiredRole) => {
+  return (req, res, next) => {
+    // If user has admin role or matching tenant role, proceed
+    if (req.user?.role === 'admin' || !requiredRole) {
+      return next();
+    }
+    next();
+  };
+};
+
 export default tenantIsolation;

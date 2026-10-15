@@ -216,6 +216,9 @@ export const authenticateToken = (req, res, next) => {
   }
 };
 
+// Backwards-compatibility alias
+export const authenticate = authenticateToken;
+
 // Role-based authorization middleware
 export const requireRole = (requiredRole) => {
   return (req, res, next) => {
