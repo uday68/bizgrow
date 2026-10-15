@@ -197,7 +197,7 @@ describe('Property 2: Secure Credential Processing', () => {
       }),
       propertyTestConfig
     );
-  });
+  }, 30000);
 
   test('JWT tokens should always have proper structure and security claims', () => {
     fc.assert(

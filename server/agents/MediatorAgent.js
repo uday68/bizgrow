@@ -9,12 +9,20 @@ import sharedAgentMemory from '../services/sharedAgentMemory.js';
  */
 class MediatorAgent {
   constructor() {
-    if (!process.env.GEMINI_API_KEY) {
-      throw new Error('GEMINI_API_KEY environment variable is required');
-    }
-    
-    this.geminiAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     this.isActive = true;
+    if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === 'your_gemini_api_key_here') {
+      console.warn('GEMINI_API_KEY not configured. MediatorAgent in standby/offline mode.');
+      this.isActive = false;
+      this.geminiAI = null;
+    } else {
+      try {
+        this.geminiAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+      } catch (err) {
+        console.warn('Failed to init Gemini in MediatorAgent:', err.message);
+        this.isActive = false;
+        this.geminiAI = null;
+      }
+    }
   }
 
   /**

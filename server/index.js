@@ -136,6 +136,11 @@ app.use(httpsEnforcement);
 app.use(securityMiddleware);
 app.use(corsMiddleware);
 app.use(requestSizeLimiter('10mb'));
+
+// Body parsing middleware
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
 app.use(inputSanitization);
 app.use(sqlInjectionProtection);
 app.use(securityEventLogger);
@@ -159,10 +164,6 @@ app.use(chatSecurityLogger());
 
 // Legacy request logger (can be removed once new logging is verified)
 app.use(requestLogger);
-
-// Body parsing middleware
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Apply API rate limiting to all routes
 app.use('/api', apiLimiter);

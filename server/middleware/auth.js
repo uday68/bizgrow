@@ -66,7 +66,7 @@ export class JWTTokenManager {
 
     const tokenId = `rt_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
     const refreshToken = jwt.sign(
-      { id: user.id, jti: tokenId, type: 'refresh', tenantId }, 
+      { id: user.id, email: user.email, role: user.role || ROLES.USER, jti: tokenId, type: 'refresh', tenantId }, 
       JWT_SECRET, 
       { 
         expiresIn: JWT_REFRESH_EXPIRES_IN,
@@ -96,7 +96,7 @@ export class JWTTokenManager {
     }
   }
 
-  static async refreshAccessToken(refreshToken, dbAccessor = null) {
+  static refreshAccessToken(refreshToken, userOrAccessor = null) {
     try {
       const decoded = jwt.verify(refreshToken, JWT_SECRET, {
         issuer: 'bizgrow-ai',
@@ -109,8 +109,8 @@ export class JWTTokenManager {
       }
 
       let user = null;
-      if (dbAccessor) {
-        user = await dbAccessor(decoded.id);
+      if (userOrAccessor && typeof userOrAccessor === 'object') {
+        user = userOrAccessor;
       }
 
       if (!user) {
@@ -144,7 +144,8 @@ export class PasswordManager {
     if (!password || password.length < 8) {
       throw new Error('Password must be at least 8 characters long');
     }
-    return await bcrypt.hash(password, BCRYPT_ROUNDS);
+    const rounds = parseInt(process.env.BCRYPT_ROUNDS) || (process.env.NODE_ENV === 'test' ? 4 : 12);
+    return await bcrypt.hash(password, rounds);
   }
 
   static async verifyPassword(password, hash) {
@@ -473,7 +474,7 @@ export const rateLimitAnalytics = {
 };
 
 // Enhanced Security Headers with comprehensive protection
-export const securityMiddleware = helmet({
+const baseHelmetMiddleware = helmet({
   // Content Security Policy
   contentSecurityPolicy: {
     directives: {
@@ -494,7 +495,7 @@ export const securityMiddleware = helmet({
       frameAncestors: ["'none'"],
       upgradeInsecureRequests: process.env.NODE_ENV === 'production' ? [] : null
     },
-    reportOnly: process.env.NODE_ENV !== 'production'
+    reportOnly: false
   },
   
   // HTTP Strict Transport Security
@@ -513,7 +514,7 @@ export const securityMiddleware = helmet({
   noSniff: true,
   
   // X-XSS-Protection
-  xssFilter: true,
+  xssFilter: false,
   
   // Referrer Policy
   referrerPolicy: {
@@ -550,6 +551,11 @@ export const securityMiddleware = helmet({
   // Hide X-Powered-By header
   hidePoweredBy: true
 });
+
+export const securityMiddleware = (req, res, next) => {
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  return baseHelmetMiddleware(req, res, next);
+};
 
 // HTTPS Enforcement Middleware
 export const httpsEnforcement = (req, res, next) => {
@@ -601,7 +607,7 @@ export const inputSanitization = (req, res, next) => {
     if (typeof obj === 'object') {
       const sanitized = {};
       for (const [key, value] of Object.entries(obj)) {
-        sanitized[sanitizeString(key)] = sanitizeObject(value);
+        sanitized[key] = sanitizeObject(value);
       }
       return sanitized;
     }
@@ -631,8 +637,8 @@ export const inputSanitization = (req, res, next) => {
 export const sqlInjectionProtection = (req, res, next) => {
   const sqlPatterns = [
     /(\b(SELECT|INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|EXEC|UNION|SCRIPT)\b)/gi,
-    /(\b(OR|AND)\s+\d+\s*=\s*\d+)/gi,
-    /(--|\/\*|\*\/|;)/g,
+    /(\b(OR|AND)\s+['"]?\w+['"]?\s*=\s*['"]?\w+['"]?)/gi,
+    /(--|\/\*|\*\/|;|#)/g,
     /(\b(CHAR|NCHAR|VARCHAR|NVARCHAR)\s*\(\s*\d+\s*\))/gi,
     /(\b(CAST|CONVERT|SUBSTRING|ASCII|CHAR_LENGTH)\s*\()/gi
   ];
@@ -654,7 +660,7 @@ export const sqlInjectionProtection = (req, res, next) => {
     }
     
     if (typeof obj === 'object') {
-      return Object.values(obj).some(checkObject);
+      return Object.entries(obj).some(([key, value]) => checkForSQLInjection(key) || checkObject(value));
     }
     
     return false;
@@ -696,13 +702,26 @@ export const requestSizeLimiter = (maxSize = '10mb') => {
       maxSize;
     
     if (contentLength > maxBytes) {
-      return res.status(413).json({
-        error: 'Request entity too large',
-        code: 'REQUEST_TOO_LARGE',
-        maxSize: maxSize,
-        receivedSize: contentLength,
-        timestamp: new Date().toISOString()
-      });
+      const send413 = () => {
+        if (!res.headersSent) {
+          res.status(413).json({
+            error: 'Request entity too large',
+            code: 'REQUEST_TOO_LARGE',
+            maxSize: maxSize,
+            receivedSize: contentLength,
+            timestamp: new Date().toISOString()
+          });
+        }
+      };
+
+      if (req.readableEnded) {
+        return send413();
+      }
+
+      req.on('data', () => {});
+      req.on('end', send413);
+      req.resume();
+      return;
     }
     
     next();

@@ -26,11 +26,11 @@ const createSecureTestApp = () => {
   
   // Apply security middleware
   app.use(securityMiddleware);
+  app.use(requestSizeLimiter('1mb'));
+  app.use(express.json({ limit: '10mb' }));
   app.use(inputSanitization);
   app.use(sqlInjectionProtection);
-  app.use(requestSizeLimiter('1mb'));
   app.use(securityEventLogger);
-  app.use(express.json());
   
   // Test routes
   app.get('/test', (req, res) => {
